@@ -140,8 +140,6 @@ var ()
 
 func main() {
 
-	tpmjwt.SigningMethodTPMRS256.Override() // RS256
-
 	ctx := context.Background()
 
 	var keyctx interface{}
