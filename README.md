@@ -1,7 +1,7 @@
 
 # golang-jwt for Trusted Platform Module (TPM)
 
-This is just an extension for [go-jwt](https://github.com/golang-jwt/jwt#extensions) i worte over thanksgiving that allows creating and verifying JWT tokens where the private key is embedded inside a [Trusted platform module](https://en.wikipedia.org/wiki/Trusted_Platform_Module).
+This is just an extension for [go-jwt](https://github.com/golang-jwt/jwt#extensions) i wrote over thanksgiving that allows creating and verifying JWT tokens where the private key is embedded inside a [Trusted platform module](https://en.wikipedia.org/wiki/Trusted_Platform_Module).
 
 You can use this library to sign and verify a JWT using the standard `go-jwt` library semantics.
 
@@ -9,9 +9,9 @@ This library also includes a utility function to create an RSA key inside a TPM 
 
 Using a TPM to sign or encrypt anything has some very specific applications which i will not go into it much (if your'e reading this, you probably already know).  If a JWT is signed by a TPM and if the key that was used was setup in a specific format, the verifier can be sure that the JWT was signed by that TPM _only_.
 
-For example, you can use a TPM to generate an RSA key with specifications that "this key was generated on a TPM with characteristics that it is not exportable outside the TPM"..very necessarily, the RSA private key will never exist anywhere else other than in that TPM.
+For example, you can use a TPM to generate an RSA key with specifications that "this key was generated on a TPM with characteristics such that it cannot get exportable outside the TPM"..very necessarily, the RSA private key will never exist anywhere else other than in that TPM.
 
-How a you trust that a specific RSA key happens to be from a given TPM is a rather complicated protocol that is also not covered in this repo.  The specifc trust protocol is called [TPM Remote Attestation](https://tpm2-software.github.io/tpm2-tss/getting-started/2019/12/18/Remote-Attestation.html).
+How a you trust that a specific RSA key happens to be from a given TPM with a given specification set is a rather complicated protocol that is also not covered in this repo.  The specific trust protocol is called [TPM Remote Attestation](https://tpm2-software.github.io/tpm2-tss/getting-started/2019/12/18/Remote-Attestation.html).
 
 This repo assumes the verifier of the JWT has already established that the RSA key that is being used to sign the JWT
 
@@ -34,12 +34,11 @@ The following types are supported
 
 * `RSA+SHA256`
 
-
 ### Setup
 
-To use this library, you need a TPM to issue a JWT. You do not need a TPM to verify; you just need the public key.  On linux, its usally at `/dev/tpm0`
+To use this library, you need a TPM to issue a JWT. You do not need a TPM to verify; you just need the public key.  On linux, its usually at `/dev/tpm0`
 
-The sample setup uses a [GCP Shielded VM](https://cloud.google.com/security/shielded-cloud/shielded-vm).  You can use any system that has a TPM (including a raspberryPi)
+The sample setup uses a [GCP Shielded VM](https://cloud.google.com/security/shielded-cloud/shielded-vm).  You can use any system that has a TPM (including a raspberryPi with a fancy extra on chip)
 
 Setup 
 
@@ -52,7 +51,7 @@ gcloud compute  instances create   tpm-device     \
 
 # ssh to VM
 
-## this library uses go-tpm-tools which...unfortunatley requires the folloing ONLY on the system
+## this library uses go-tpm-tools which...unfortunately requires the following ONLY on the system
 ## that generates the JWT;  any verifier just needs the public key
 ##  https://github.com/google/go-tpm-tools#trousers-errors-when-building-server
 apt-get update && apt-get install gcc libtspi-dev
