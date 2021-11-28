@@ -146,7 +146,7 @@ func main() {
 	}
 	log.Printf("Public Key written to: %s", *publicKeyFile)
 
-	jkey, err := jwk.New(rakPubPEM)
+	jkey, err := jwk.New(ap)
 	if err != nil {
 		log.Fatalf("failed to create symmetric key: %s\n", err)
 	}
@@ -209,3 +209,4 @@ func main() {
 	// log.Printf("CSR written to: %s", *pemCSRFile)
 
 }
+
