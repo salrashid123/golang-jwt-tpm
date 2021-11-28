@@ -26,6 +26,8 @@ Other references
 * [Google Cloud IoT Core Authentication with Trusted Platform Module (TPM)](https://github.com/salrashid123/iot_tpm_auth)
 
 
+Much of this implementation is inspired templated form [gcp-jwt-go](https://github.com/someone1/gcp-jwt-go)
+
 ### Supported Key Types
 
 The following types are supported

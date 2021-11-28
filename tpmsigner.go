@@ -16,6 +16,8 @@ import (
 	"github.com/google/go-tpm/tpm2"
 )
 
+// Much of this implementation is inspired templated form [gcp-jwt-go](https://github.com/someone1/gcp-jwt-go)
+
 type TPMConfig struct {
 	TPMDevice        string
 	KeyHandleFile    string           // load a key from serialized keyfile
