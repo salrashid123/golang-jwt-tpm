@@ -93,6 +93,8 @@ The output of the create command is `key.bin` which is a TPM public key referenc
 
 Note that the output shows the PublicKey in RSA and JWK formats
 
+Copy the file `key.bin` into the `examples/` folder
+
 Now create a test JWT and verify it with an RSA key that is extracted from a TPM and also directly. 
 
 ```log
@@ -117,6 +119,7 @@ The JWT is formatted as:
 }
 ```
 
+to use, just import the library configure the TPM:
 
 ```golang
 package main
