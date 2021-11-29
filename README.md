@@ -120,7 +120,7 @@ The JWT is formatted as:
 }
 ```
 
-to use, just import the library configure the TPM:
+to use, just import the library configure the TPM.  Remember to set the override so that the correct `alg` is defined in the JWT header
 
 ```golang
 package main
@@ -146,6 +146,9 @@ func main() {
 		ExpiresAt: time.Now().Add(time.Minute * 1).Unix(),
 		Issuer:    "test",
 	}
+
+	// set override
+	tpmjwt.SigningMethodTPMRS256.Override()
 
 	token := jwt.NewWithClaims(tpmjwt.SigningMethodTPMRS256, claims)
 

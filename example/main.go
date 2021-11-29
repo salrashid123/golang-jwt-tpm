@@ -22,6 +22,7 @@ func main() {
 		Issuer:    "test",
 	}
 
+	tpmjwt.SigningMethodTPMRS256.Override()
 	token := jwt.NewWithClaims(tpmjwt.SigningMethodTPMRS256, claims)
 
 	config := &tpmjwt.TPMConfig{
