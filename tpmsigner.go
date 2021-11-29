@@ -258,11 +258,12 @@ func (s *SigningMethodTPM) Sign(signingString string, key interface{}) (string, 
 		Alg:  tpm2.AlgRSASSA,
 		Hash: tpm2.AlgSHA256,
 	})
-	signedBytes := []byte(sig.RSA.Signature)
-
 	if err != nil {
 		return "", fmt.Errorf("failed to sign data: %v", err)
 	}
+
+	signedBytes := []byte(sig.RSA.Signature)
+
 	return base64.RawURLEncoding.EncodeToString(signedBytes), err
 }
 
