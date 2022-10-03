@@ -4,7 +4,7 @@ go 1.17
 
 require (
 	github.com/golang-jwt/jwt v3.2.2+incompatible
-	github.com/salrashid123/golang-jwt-tpm v0.0.0-20211128215158-fe8e09621ffa
+	github.com/salrashid123/golang-jwt-tpm v0.0.0
 )
 
 require (
@@ -14,4 +14,4 @@ require (
 	google.golang.org/protobuf v1.27.1 // indirect
 )
 
-// replace github.com/salrashid123/golang-jwt-tpm => ../
+replace github.com/salrashid123/golang-jwt-tpm => ../

@@ -5,12 +5,14 @@
 package main
 
 import (
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"encoding/pem"
 	"fmt"
 	"io/ioutil"
 
+	"crypto/sha256"
 	"crypto/x509"
 	"flag"
 
@@ -146,11 +148,19 @@ func main() {
 	}
 	log.Printf("Public Key written to: %s", *publicKeyFile)
 
+	der, err := x509.MarshalPKIXPublicKey(ap)
+	if err != nil {
+		log.Fatalf("keycreate: error converting public key: %v", err)
+	}
+	hasher := sha256.New()
+	hasher.Write(der)
+	kid := base64.RawStdEncoding.EncodeToString(hasher.Sum(nil))
+
 	jkey, err := jwk.New(ap)
 	if err != nil {
 		log.Fatalf("failed to create symmetric key: %s\n", err)
 	}
-	jkey.Set(jwk.KeyIDKey, hex.EncodeToString(k.Name().Digest.Value))
+	jkey.Set(jwk.KeyIDKey, kid)
 
 	buf, err := json.MarshalIndent(jkey, "", "  ")
 	if err != nil {
@@ -209,4 +219,3 @@ func main() {
 	// log.Printf("CSR written to: %s", *pemCSRFile)
 
 }
-

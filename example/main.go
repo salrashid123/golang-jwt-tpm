@@ -27,7 +27,7 @@ func main() {
 
 	config := &tpmjwt.TPMConfig{
 		TPMDevice:     "/dev/tpm0",
-		KeyHandleFile: "key.bin",
+		KeyHandleFile: "../util/key.bin",
 		KeyTemplate:   tpmjwt.AttestationKeyParametersRSA256,
 		//KeyTemplate: tpmjwt.UnrestrictedKeyParametersRSA256,
 	}

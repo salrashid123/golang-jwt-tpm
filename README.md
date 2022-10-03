@@ -65,28 +65,27 @@ Once on the VM, create a key on TPM (if you already have an existing key on TPM,
 # cd util
 # go run keycreate.go 
 
-2021/11/28 20:30:03 ======= Init  ========
-2021/11/28 20:30:03 0 handles flushed
-2021/11/28 20:30:03      key Name: 
-5e41119a2fe12b8fcff3ad663d8aaa96d840ce765d92a256c503bf63060fc5d6
-2021/11/28 20:30:03 ======= ContextSave (k) ========
-2021/11/28 20:30:03      PublicKey: 
+2022/10/02 13:26:33 0 handles flushed
+2022/10/02 13:26:33      key Name: 
+dcbf8bc4563cca44c96f795e29806c3c6e1529cdecc16899fad5862fd358ae50
+2022/10/02 13:26:33 ======= ContextSave (k) ========
+2022/10/02 13:26:33      PublicKey: 
 -----BEGIN PUBLIC KEY-----
-MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAyhUost8vRhTv/O3lsLQN
-za3CdkBVntiZcny7jh2GXi16CtV8Y8bbmWlmACih+0f5SourEbTHiz1zr9AJ6VmQ
-EuOVBv0WBXqUpeUVAUGDrJVJt3qwnTyLUgZmyE158J3HpuI9qV2Q4Z7mkUSGaapk
-kWGvWd66Me2CqjKDVtJvVxdZhM6PkdrfAUuTdnmfOQ0637YxVzg6S9Jb/Tbmye17
-ZsT+sbGx0Atn86r9anVWeXrraXYJ3t42ArYp0UV87hB/p1RU2yofUSu+afeX8tEU
-PNAYZQZaCRCnkIjfFtyEpobsU0/9QZ9htPAfToca3YdTZ9W/QOUpYZrWIxWRxvM0
-ZQIDAQAB
+MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAyrQsZpVRuStYgpyoK1i8
+rcYyaR5nCdS877Zji/bUqBEPxxVBoB21M/amr3pSKRRiHWBO0LYqonFEJAgDkuw2
+JmlgiN30LVElc7KnLZ1dwVnClYO7VF5QW9jDBZfAPEzsjt2S6k+n6w7KjqZfmnUj
+hM1OabYv9BKs6pRswS8AN0ldLc8yd6aYHLZBWX5i6JC0b8WhauNz9+O+x20vbufD
+iGfpocccoQc717NxtXDksIK2dsv2CPPGevZ8Z8+pMngODKWahlAVoBYBaunF9dQr
+DFdy+1r7HaZyyqu1/WIh3k/Fxe6PGPllqvA4n4+rHPJFekkBBTR2HOES+yoXiO8M
+MwIDAQAB
 -----END PUBLIC KEY-----
-2021/11/28 20:30:03 Public Key written to: key.pem
+2022/10/02 13:26:33 Public Key written to: key.pem
 JWK Format:
 {
   "e": "AQAB",
-  "kid": "5e41119a2fe12b8fcff3ad663d8aaa96d840ce765d92a256c503bf63060fc5d6",
+  "kid": "+0gg+AON1Ig4VoxZXEKMjEi/m0B5NoyX+SkaZdAYZuE",
   "kty": "RSA",
-  "n": "yhUost8vRhTv_O3lsLQNza3CdkBVntiZcny7jh2GXi16CtV8Y8bbmWlmACih-0f5SourEbTHiz1zr9AJ6VmQEuOVBv0WBXqUpeUVAUGDrJVJt3qwnTyLUgZmyE158J3HpuI9qV2Q4Z7mkUSGaapkkWGvWd66Me2CqjKDVtJvVxdZhM6PkdrfAUuTdnmfOQ0637YxVzg6S9Jb_Tbmye17ZsT-sbGx0Atn86r9anVWeXrraXYJ3t42ArYp0UV87hB_p1RU2yofUSu-afeX8tEUPNAYZQZaCRCnkIjfFtyEpobsU0_9QZ9htPAfToca3YdTZ9W_QOUpYZrWIxWRxvM0ZQ"
+  "n": "yrQsZpVRuStYgpyoK1i8rcYyaR5nCdS877Zji_bUqBEPxxVBoB21M_amr3pSKRRiHWBO0LYqonFEJAgDkuw2JmlgiN30LVElc7KnLZ1dwVnClYO7VF5QW9jDBZfAPEzsjt2S6k-n6w7KjqZfmnUjhM1OabYv9BKs6pRswS8AN0ldLc8yd6aYHLZBWX5i6JC0b8WhauNz9-O-x20vbufDiGfpocccoQc717NxtXDksIK2dsv2CPPGevZ8Z8-pMngODKWahlAVoBYBaunF9dQrDFdy-1r7HaZyyqu1_WIh3k_Fxe6PGPllqvA4n4-rHPJFekkBBTR2HOES-yoXiO8MMw"
 }
 ```
 
@@ -94,30 +93,41 @@ The output of the create command is `key.bin` which is a TPM public key referenc
 
 Note that the output shows the PublicKey in RSA and JWK formats
 
-Copy the file `key.bin` into the `examples/` folder
-
 Now create a test JWT and verify it with an RSA key that is extracted from a TPM and also directly. 
 
 ```log
 # cd examples/
 # go run main.go 
-TOKEN: eyJhbGciOiJSUzI1NiIsImtpZCI6IjVlNDExMTlhMmZlMTJiOGZjZmYzYWQ2NjNkOGFhYTk2ZDg0MGNlNzY1ZDkyYTI1NmM1MDNiZjYzMDYwZmM1ZDYiLCJ0eXAiOiJKV1QifQ.eyJleHAiOjE2MzgxMzE1MzAsImlzcyI6InRlc3QifQ.R1CZ1XqXyrMHk77m1Ehj6r4c1pQVFqTRrJ-ij-Y3HFMY5n07orlWGffuiXQU-nXv9coqoncaj3T7a2inF0Qwow5GSPoBdueYVt7bGdU9p7Tb5fC-6OLMwm8JjqrCtFKAjjyLuBGiaLkZ6aZFCouzyQljL_TWx8Lz7_0wZewpX4SUlXNq3aa9pnP5AfmACfrj3_Ds4UllghGO2xHgNxFeAdlr3gvYOZmLIrLwT5KnAV4ZEu-tRJy6ej8qHHNUiNZZ1UkyY_U6SLDmzW8Cu9JbtXLF0b9kbU98bcGZr41bAdRbKxqclTNi04k7ZC2iVS6H0jFTHYwefLBdjXS9yDDLtA
-2021/11/28 20:31:10      verified with TPM PublicKey
-2021/11/28 20:31:10      verified with exported PubicKey
+
+TOKEN: eyJhbGciOiJSUzI1NiIsImtpZCI6IiswZ2crQU9OMUlnNFZveFpYRUtNakVpL20wQjVOb3lYK1NrYVpkQVladUUiLCJ0eXAiOiJKV1QifQ.eyJleHAiOjE2NjQ3MTczMTEsImlzcyI6InRlc3QifQ.M_9Xh8-ULkuu6TVAGd8UAIQI-K7DRBDp3GEANfa512nzMNZop7NIXLYdozy_k37FNu74s40CU4wX7l6zhjLiF84CCo98rw6TdtOewjsq8_FEFFalA4rLHB3nzbaRkmLq1J9n9eHZ1ueDSsONhCJ-MC_G8lPNSSMqcacxQX4GuU5IEawbZBiSPx2Gq-6_mstDjaJACNabOz13Kgp687XnZW5TBdSytRB0Gd1eZD0qALmZkoFtKMlmJ9qXOAIVZceAlg_hGeAXwSTTVfMZUgO-lknSPXVr0MYpWDpnefPtcmLdbYtWyjP73uzU6JHIwP8EszrPGlK3Um3SZgQBdummLQ
+2022/10/02 13:27:31      verified with TPM PublicKey
+2022/10/02 13:27:31      verified with exported PubicKey
+
 ```
 
 The JWT is formatted as:
 
+
 ```json
 {
   "alg": "RS256",
-  "kid": "5e41119a2fe12b8fcff3ad663d8aaa96d840ce765d92a256c503bf63060fc5d6",
+  "kid": "+0gg+AON1Ig4VoxZXEKMjEi/m0B5NoyX+SkaZdAYZuE",
   "typ": "JWT"
 }
 {
   "exp": 1638131530,
   "iss": "test"
 }
+```
+
+Where the `keyID` is the base64 encoded hash of the DER public key
+
+```bash
+$ openssl rsa -pubin -in util/key.pem -outform DER | openssl sha256
+writing RSA key
+SHA256(stdin)= fb4820f8038dd48838568c595c428c8c48bf9b4079368c97f9291a65d01866e1
+
+# base64 of hex fb4820f8038dd48838568c595c428c8c48bf9b4079368c97f9291a65d01866e1 --> +0gg+AON1Ig4VoxZXEKMjEi/m0B5NoyX+SkaZdAYZuE=
 ```
 
 to use, just import the library configure the TPM.  Remember to set the override so that the correct `alg` is defined in the JWT header

@@ -3,8 +3,10 @@ package tpmjwt
 import (
 	"context"
 	"crypto"
+	"crypto/rsa"
+	"crypto/sha256"
+	"crypto/x509"
 	"encoding/base64"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
@@ -162,10 +164,25 @@ func NewTPMContext(parent context.Context, val *TPMConfig) (context.Context, err
 		defer rwc.Close()
 
 		kk, err := loadKey(rwc, val.KeyTemplate, val.KeyHandleFile, val.KeyHandleNV)
+		if err != nil {
+			return nil, fmt.Errorf("tpmjwt: error loading Key: %v", err)
+		}
 		defer kk.Close()
 
-		// override they KeyID value (even if set manually here since we're already loading a private key)
-		val.KeyID = hex.EncodeToString(kk.Name().Digest.Value)
+		if val.KeyID == "" {
+			key, ok := kk.PublicKey().(*rsa.PublicKey)
+			if ok {
+				der, err := x509.MarshalPKIXPublicKey(key)
+				if err != nil {
+					return nil, fmt.Errorf("tpmjwt: error converting public key: %v", err)
+				}
+				hasher := sha256.New()
+				hasher.Write(der)
+				val.KeyID = base64.RawStdEncoding.EncodeToString(hasher.Sum(nil))
+			}
+			// TODO: check ECkey
+		}
+
 		// Note, we can also 'Just get" the public key here
 		val.publicKeyFromTPM = kk.PublicKey()
 
