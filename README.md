@@ -61,8 +61,7 @@ Once on the VM, create a key on TPM (if you already have an existing key on TPM,
 
 The key created is _persisted_ at a handle (default `0x81008000`) and you can pick any defined in pg 15 of [Registry of Reserved TPM 2.0 Handles and Localities](https://trustedcomputinggroup.org/wp-content/uploads/RegistryOfReservedTPM2HandlesAndLocalities_v1p1_pub.pdf)
 
-
-basically in base 16: `81000000 --> 817FFFFF`
+basically in base 16: `81008000 – 8100FFFF`
 
 ```log
 # git clone https://github.com/salrashid123/golang-jwt-tpm.git
