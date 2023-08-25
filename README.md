@@ -61,7 +61,7 @@ Once on the VM, create a key on TPM (if you already have an existing key on TPM,
 
 The key created is _persisted_ at a handle (default `0x81008000`) and you can pick any defined in pg 15 of [Registry of Reserved TPM 2.0 Handles and Localities](https://trustedcomputinggroup.org/wp-content/uploads/RegistryOfReservedTPM2HandlesAndLocalities_v1p1_pub.pdf)
 
-basically in base 16: `81008000 – 8100FFFF`
+basically in base 16: `81008000 – 8100FFFF`  (note: TPMs have limited slots for persistent objects so if you see `error code 0x4b : insufficient space for NV allocation`, you need to clear a slot (eg `tpm2_evictcontrol -C o -c 0x81008000`))
 
 ```log
 # git clone https://github.com/salrashid123/golang-jwt-tpm.git
@@ -108,8 +108,6 @@ Now create a test JWT and verify it with an RSA key that is extracted from a TPM
 TOKEN: eyJhbGciOiJSUzI1NiIsImtpZCI6Ik9hbHpFeFhtZ1k4bitvdDFGdXEzVzNSZGFNZlh3dno2TC9yY1pNVnJRZlUiLCJ0eXAiOiJKV1QifQ.eyJleHAiOjE2OTI5NTk3NTgsImlzcyI6InRlc3QifQ.l1n5luU4UoHiRcDdIMUSFkJvozKOxm2D3ze8___Jo0oI4XSjDT1gNr-01KYA5GzQBr_d34hwypo_Pzol9Brcne2OFliQCtzxqzolBvhK_HcHzjtZBTCMJ87mLefDOgoIU_PW9nDnfxMnchDKbQLkdO9U6e8qJLzNYLP0pkPnPxrh2qjywt_I5SFCTLuUSMLIIAzM31eQuizysr7riwMLHbX8jIuS_2aZ9Nn7YxDtFJzfWLYhoa7MLu-DAdu5XjqyJ1oVXhM8Au1NyRpy7WIlKHVuzqxyEDi5pwKqTehUgWBmX_5eUUysNNmaXkWdbrIMSv9Eq3-9X4i6gWTB4VRuDQ
 2023/08/25 10:34:58      verified with TPM PublicKey
 2023/08/25 10:34:58      verified with exported PubicKey
-
-
 ```
 
 The JWT is formatted as:

@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"flag"
 	"fmt"
 	"log"
 	"time"
@@ -10,10 +11,13 @@ import (
 	tpmjwt "github.com/salrashid123/golang-jwt-tpm"
 )
 
-var ()
+var (
+	persistentHandle = flag.Uint("persistentHandle", 0x81008000, "Handle value")
+)
 
 func main() {
 
+	flag.Parse()
 	ctx := context.Background()
 
 	var keyctx interface{}
@@ -27,7 +31,7 @@ func main() {
 
 	config := &tpmjwt.TPMConfig{
 		TPMDevice:   "/dev/tpm0",
-		KeyHandle:   0x81008000,
+		KeyHandle:   *persistentHandle,
 		KeyTemplate: tpmjwt.AttestationKeyParametersRSA256,
 		//KeyTemplate: tpmjwt.UnrestrictedKeyParametersRSA256,
 	}
