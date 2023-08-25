@@ -26,9 +26,9 @@ func main() {
 	token := jwt.NewWithClaims(tpmjwt.SigningMethodTPMRS256, claims)
 
 	config := &tpmjwt.TPMConfig{
-		TPMDevice:     "/dev/tpm0",
-		KeyHandleFile: "../util/key.bin",
-		KeyTemplate:   tpmjwt.AttestationKeyParametersRSA256,
+		TPMDevice:   "/dev/tpm0",
+		KeyHandle:   0x81008000,
+		KeyTemplate: tpmjwt.AttestationKeyParametersRSA256,
 		//KeyTemplate: tpmjwt.UnrestrictedKeyParametersRSA256,
 	}
 

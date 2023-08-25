@@ -10,20 +10,19 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"io/ioutil"
 
 	jwt "github.com/golang-jwt/jwt"
 
 	"github.com/google/go-tpm-tools/client"
-	"github.com/google/go-tpm/tpm2"
+	"github.com/google/go-tpm/legacy/tpm2"
+	"github.com/google/go-tpm/tpmutil"
 )
 
 // Much of this implementation is inspired templated form [gcp-jwt-go](https://github.com/someone1/gcp-jwt-go)
 
 type TPMConfig struct {
 	TPMDevice        string
-	KeyHandleFile    string           // load a key from serialized keyfile
-	KeyHandleNV      uint32           // load the key from persistent handle (TODO) https://github.com/google/go-tpm-tools/blob/master/client/keys.go#L83
+	KeyHandle        uint             // load a key from handle
 	KeyID            string           // (optional) the TPM keyID (normally the key "Name")
 	KeyTemplate      tpm2.Public      // the specifications for the key
 	publicKeyFromTPM crypto.PublicKey // the public key as read from KeyHandleFile, KeyHandleNV
@@ -120,20 +119,9 @@ func loadTPM(device string, flush string) (io.ReadWriteCloser, error) {
 	return rwc, nil
 }
 
-func loadKey(rwc io.ReadWriteCloser, keyTemplate tpm2.Public, keyHandleFile string, keyHandleNV uint32) (client.Key, error) {
+func loadKey(rwc io.ReadWriteCloser, keyTemplate tpm2.Public, keyHandle uint32) (client.Key, error) {
 
-	if keyHandleNV != 0 {
-		return client.Key{}, fmt.Errorf("KeyHandle from NV not supported")
-	}
-	// check if we can load the keyFile
-	khBytes, err := ioutil.ReadFile(keyHandleFile)
-	if err != nil {
-		return client.Key{}, fmt.Errorf("tpmjwt: contextLoad failed for tpmKeyfile: %v", err)
-	}
-	kh, err := tpm2.ContextLoad(rwc, khBytes)
-	if err != nil {
-		return client.Key{}, fmt.Errorf("tpmjwt: contextLoad failed for kh: %v", err)
-	}
+	kh := tpmutil.Handle(keyHandle)
 
 	// TODO: somehow compare the provided template val.KeyTemplate to the ones that are supported
 	// (i.,e we dont' support RSAPSS or ECCParameters yet...though its easy to add)
@@ -155,7 +143,7 @@ func loadKey(rwc io.ReadWriteCloser, keyTemplate tpm2.Public, keyHandleFile stri
 func NewTPMContext(parent context.Context, val *TPMConfig) (context.Context, error) {
 
 	// first check if a TPM is even involved in the picture here since we can verify w/o a TPM
-	if val.KeyHandleFile != "" || val.KeyHandleNV != 0 {
+	if val.KeyHandle != 0 {
 
 		rwc, err := loadTPM(val.TPMDevice, "none")
 		if err != nil {
@@ -163,7 +151,7 @@ func NewTPMContext(parent context.Context, val *TPMConfig) (context.Context, err
 		}
 		defer rwc.Close()
 
-		kk, err := loadKey(rwc, val.KeyTemplate, val.KeyHandleFile, val.KeyHandleNV)
+		kk, err := loadKey(rwc, val.KeyTemplate, uint32(val.KeyHandle))
 		if err != nil {
 			return nil, fmt.Errorf("tpmjwt: error loading Key: %v", err)
 		}
@@ -245,7 +233,7 @@ func (s *SigningMethodTPM) Sign(signingString string, key interface{}) (string, 
 		return "", fmt.Errorf("tpmjwt: error loading TPM: %v", err)
 	}
 	defer rwc.Close()
-	kk, err := loadKey(rwc, config.KeyTemplate, config.KeyHandleFile, config.KeyHandleNV)
+	kk, err := loadKey(rwc, config.KeyTemplate, uint32(config.KeyHandle))
 	if err != nil {
 		return "", fmt.Errorf("tpmjwt: errorloading key %v", err)
 	}
@@ -293,3 +281,4 @@ func TPMVerfiyKeyfunc(ctx context.Context, config *TPMConfig) (jwt.Keyfunc, erro
 func (s *SigningMethodTPM) Verify(signingString, signature string, key interface{}) error {
 	return s.override.Verify(signingString, signature, key)
 }
+

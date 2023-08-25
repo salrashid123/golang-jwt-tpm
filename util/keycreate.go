@@ -18,8 +18,10 @@ import (
 
 	"log"
 
+	"github.com/golang/glog"
 	"github.com/google/go-tpm-tools/client"
-	"github.com/google/go-tpm/tpm2"
+	"github.com/google/go-tpm/legacy/tpm2"
+	"github.com/google/go-tpm/tpmutil"
 	"github.com/lestrrat-go/jwx/jwk"
 )
 
@@ -39,9 +41,10 @@ var (
 	tpmPath       = flag.String("tpm-path", "/dev/tpm0", "Path to the TPM device (character device or a Unix socket).")
 	publicKeyFile = flag.String("publicKeyFile", "key.pem", "PEM File to write the public key")
 	// pemCSRFile = flag.String("pemCSRFile", "key.csr", "CSR File to write to")
-	keyFile = flag.String("keyFile", "key.bin", "TPM KeyFile")
-
-	handleNames = map[string][]tpm2.HandleType{
+	persistentHandle = flag.Uint("persistentHandle", 0x81008000, "Handle value")
+	flushHandles     = flag.Bool("flushHandles", false, "FlushTPM Hanldles")
+	evict            = flag.Bool("evict", false, "Evict prior handle")
+	handleNames      = map[string][]tpm2.HandleType{
 		"all":       {tpm2.HandleTypeLoadedSession, tpm2.HandleTypeSavedSession, tpm2.HandleTypeTransient},
 		"loaded":    {tpm2.HandleTypeLoadedSession},
 		"saved":     {tpm2.HandleTypeSavedSession},
@@ -83,22 +86,23 @@ func main() {
 		}
 	}()
 
-	totalHandles := 0
-	for _, handleType := range handleNames["all"] {
-		handles, err := client.Handles(rwc, handleType)
-		if err != nil {
-			log.Fatalf("getting handles: %v", err)
-		}
-		for _, handle := range handles {
-			if err = tpm2.FlushContext(rwc, handle); err != nil {
-				log.Fatalf("flushing handle 0x%x: %v", handle, err)
+	if *flushHandles {
+		totalHandles := 0
+		for _, handleType := range handleNames["all"] {
+			handles, err := client.Handles(rwc, handleType)
+			if err != nil {
+				log.Fatalf("getting handles: %v", err)
 			}
-			log.Printf("Handle 0x%x flushed\n", handle)
-			totalHandles++
+			for _, handle := range handles {
+				if err = tpm2.FlushContext(rwc, handle); err != nil {
+					log.Fatalf("flushing handle 0x%x: %v", handle, err)
+				}
+				log.Printf("Handle 0x%x flushed\n", handle)
+				totalHandles++
+			}
 		}
+		log.Printf("%d handles flushed\n", totalHandles)
 	}
-
-	log.Printf("%d handles flushed\n", totalHandles)
 
 	k, err := client.NewKey(rwc, tpm2.HandleOwner, keyParameters)
 	if err != nil {
@@ -108,15 +112,19 @@ func main() {
 	log.Printf("     key Name: \n%s", hex.EncodeToString(k.Name().Digest.Value))
 
 	kh := k.Handle()
-	log.Printf("======= ContextSave (k) ========")
-	khBytes, err := tpm2.ContextSave(rwc, kh)
-	if err != nil {
-		log.Fatalf("ContextSave failed for ekh: %v", err)
+	log.Printf("======= PersistHandle (k) ========")
+	pHandle := tpmutil.Handle(*persistentHandle)
+	// if you want to evict an existing
+	if *evict {
+		err = tpm2.EvictControl(rwc, "", tpm2.HandleOwner, pHandle, pHandle)
+		if err != nil {
+			glog.Fatalf("     Unable evict persistentHandle: %v ", err)
+		}
 	}
 
-	err = ioutil.WriteFile(*keyFile, khBytes, 0644)
+	err = tpm2.EvictControl(rwc, "", tpm2.HandleOwner, kh, pHandle)
 	if err != nil {
-		log.Fatalf("ContextSave failed for ekh: %v", err)
+		glog.Fatalf("     Unable to set persistentHandle: %v", err)
 	}
 	defer tpm2.FlushContext(rwc, kh)
 
@@ -170,14 +178,8 @@ func main() {
 	fmt.Printf("JWK Format:\n%s\n", buf)
 
 	// glog.V(2).Infof("======= ContextLoad (k) ========")
-	// khBytes, err = ioutil.ReadFile(*keyFile)
-	// if err != nil {
-	// 	log.Fatalf("ContextLoad failed for ekh: %v", err)
-	// }
-	// kh, err = tpm2.ContextLoad(rwc, khBytes)
-	// if err != nil {
-	// 	log.Fatalf("ContextLoad failed for kh: %v", err)
-	// }
+	// kh := tpmutil.Handle(*persistentHandle)
+
 	// kk, err := client.NewCachedKey(rwc, tpm2.HandleOwner, unrestrictedKeyParams, kh)
 	// s, err := kk.GetSigner()
 	// if err != nil {
@@ -219,3 +221,4 @@ func main() {
 	// log.Printf("CSR written to: %s", *pemCSRFile)
 
 }
+

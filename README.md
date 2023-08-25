@@ -59,37 +59,44 @@ apt-get update && apt-get install gcc libtspi-dev
 
 Once on the VM, create a key on TPM (if you already have an existing key on TPM, you can acquire a handle using `go-tpm-tools`).  For now, create a key
 
+The key created is _persisted_ at a handle (default `0x81008000`) and you can pick any defined in pg 15 of [Registry of Reserved TPM 2.0 Handles and Localities](https://trustedcomputinggroup.org/wp-content/uploads/RegistryOfReservedTPM2HandlesAndLocalities_v1p1_pub.pdf)
+
+
+basically in base 16: `81000000 --> 817FFFFF`
 
 ```log
 # git clone https://github.com/salrashid123/golang-jwt-tpm.git
 # cd util
-# go run keycreate.go 
 
-2022/10/02 13:26:33 0 handles flushed
-2022/10/02 13:26:33      key Name: 
-dcbf8bc4563cca44c96f795e29806c3c6e1529cdecc16899fad5862fd358ae50
-2022/10/02 13:26:33 ======= ContextSave (k) ========
-2022/10/02 13:26:33      PublicKey: 
+# go run keycreate.go  --persistentHandle 0x81008000
+
+2023/08/25 10:33:20 ======= Init  ========
+2023/08/25 10:33:20      key Name: 
+b96d36c1514a1e00f0213c5f52f5c74e5d439f5b333360330ef5695ec27d9100
+2023/08/25 10:33:20 ======= PersistHandle (k) ========
+2023/08/25 10:33:20      PublicKey: 
 -----BEGIN PUBLIC KEY-----
-MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAyrQsZpVRuStYgpyoK1i8
-rcYyaR5nCdS877Zji/bUqBEPxxVBoB21M/amr3pSKRRiHWBO0LYqonFEJAgDkuw2
-JmlgiN30LVElc7KnLZ1dwVnClYO7VF5QW9jDBZfAPEzsjt2S6k+n6w7KjqZfmnUj
-hM1OabYv9BKs6pRswS8AN0ldLc8yd6aYHLZBWX5i6JC0b8WhauNz9+O+x20vbufD
-iGfpocccoQc717NxtXDksIK2dsv2CPPGevZ8Z8+pMngODKWahlAVoBYBaunF9dQr
-DFdy+1r7HaZyyqu1/WIh3k/Fxe6PGPllqvA4n4+rHPJFekkBBTR2HOES+yoXiO8M
-MwIDAQAB
+MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAvenLjnHCMRr9XEcYZ7rR
+qMUF5jAdFXqumrKG+uVYLR/7VNJAF3XgQRrEF/SjTMIwYXgzk0w6JK+fVVPFjiRf
+7Jnm4eEvd3uBXHTs3JSosQ8E6DvArSJ7RyXslj7B/l1Fth/a2CUuMngY+KD7e+bL
+iLnZj7P16MVaUQtwHIlcE5wctW0o1ZomOUqMyffn1pCKtgQ3Sgh/d2/LHH+xIzbH
+fNzqXLVVvZ0yuIq8efuCcvEDj5ad5r7eJ330lVkLF12p9gzYVDzhVTpvr2GCHiab
+GhqVxDAS6lUb+H6IvayqlyCw/HLyqJ0+uldz0FHTusUsYkFJB5a7HF3vTG+vzhzq
+/wIDAQAB
 -----END PUBLIC KEY-----
-2022/10/02 13:26:33 Public Key written to: key.pem
+2023/08/25 10:33:20 Public Key written to: key.pem
 JWK Format:
 {
   "e": "AQAB",
-  "kid": "+0gg+AON1Ig4VoxZXEKMjEi/m0B5NoyX+SkaZdAYZuE",
+  "kid": "OalzExXmgY8n+ot1Fuq3W3RdaMfXwvz6L/rcZMVrQfU",
   "kty": "RSA",
-  "n": "yrQsZpVRuStYgpyoK1i8rcYyaR5nCdS877Zji_bUqBEPxxVBoB21M_amr3pSKRRiHWBO0LYqonFEJAgDkuw2JmlgiN30LVElc7KnLZ1dwVnClYO7VF5QW9jDBZfAPEzsjt2S6k-n6w7KjqZfmnUjhM1OabYv9BKs6pRswS8AN0ldLc8yd6aYHLZBWX5i6JC0b8WhauNz9-O-x20vbufDiGfpocccoQc717NxtXDksIK2dsv2CPPGevZ8Z8-pMngODKWahlAVoBYBaunF9dQrDFdy-1r7HaZyyqu1_WIh3k_Fxe6PGPllqvA4n4-rHPJFekkBBTR2HOES-yoXiO8MMw"
+  "n": "venLjnHCMRr9XEcYZ7rRqMUF5jAdFXqumrKG-uVYLR_7VNJAF3XgQRrEF_SjTMIwYXgzk0w6JK-fVVPFjiRf7Jnm4eEvd3uBXHTs3JSosQ8E6DvArSJ7RyXslj7B_l1Fth_a2CUuMngY-KD7e-bLiLnZj7P16MVaUQtwHIlcE5wctW0o1ZomOUqMyffn1pCKtgQ3Sgh_d2_LHH-xIzbHfNzqXLVVvZ0yuIq8efuCcvEDj5ad5r7eJ330lVkLF12p9gzYVDzhVTpvr2GCHiabGhqVxDAS6lUb-H6IvayqlyCw_HLyqJ0-uldz0FHTusUsYkFJB5a7HF3vTG-vzhzq_w"
 }
 ```
 
-The output of the create command is `key.bin` which is a TPM public key reference to the embedded key.  The output also includes `key.pem` (the public `RSA`)
+Note, if the handle is already defined, you can evict it with `-evict` flag (equivalent of `tpm2_evictcontrol -C o -c  0x81008000`)
+
+The output of the create command make a perisstent key at the value of `persistentHandle`.  The output also includes `key.pem` (the public `RSA`)
 
 Note that the output shows the PublicKey in RSA and JWK formats
 
@@ -97,11 +104,12 @@ Now create a test JWT and verify it with an RSA key that is extracted from a TPM
 
 ```log
 # cd examples/
-# go run main.go 
+# go run main.go --persistentHandle 0x81008000
 
-TOKEN: eyJhbGciOiJSUzI1NiIsImtpZCI6IiswZ2crQU9OMUlnNFZveFpYRUtNakVpL20wQjVOb3lYK1NrYVpkQVladUUiLCJ0eXAiOiJKV1QifQ.eyJleHAiOjE2NjQ3MTczMTEsImlzcyI6InRlc3QifQ.M_9Xh8-ULkuu6TVAGd8UAIQI-K7DRBDp3GEANfa512nzMNZop7NIXLYdozy_k37FNu74s40CU4wX7l6zhjLiF84CCo98rw6TdtOewjsq8_FEFFalA4rLHB3nzbaRkmLq1J9n9eHZ1ueDSsONhCJ-MC_G8lPNSSMqcacxQX4GuU5IEawbZBiSPx2Gq-6_mstDjaJACNabOz13Kgp687XnZW5TBdSytRB0Gd1eZD0qALmZkoFtKMlmJ9qXOAIVZceAlg_hGeAXwSTTVfMZUgO-lknSPXVr0MYpWDpnefPtcmLdbYtWyjP73uzU6JHIwP8EszrPGlK3Um3SZgQBdummLQ
-2022/10/02 13:27:31      verified with TPM PublicKey
-2022/10/02 13:27:31      verified with exported PubicKey
+TOKEN: eyJhbGciOiJSUzI1NiIsImtpZCI6Ik9hbHpFeFhtZ1k4bitvdDFGdXEzVzNSZGFNZlh3dno2TC9yY1pNVnJRZlUiLCJ0eXAiOiJKV1QifQ.eyJleHAiOjE2OTI5NTk3NTgsImlzcyI6InRlc3QifQ.l1n5luU4UoHiRcDdIMUSFkJvozKOxm2D3ze8___Jo0oI4XSjDT1gNr-01KYA5GzQBr_d34hwypo_Pzol9Brcne2OFliQCtzxqzolBvhK_HcHzjtZBTCMJ87mLefDOgoIU_PW9nDnfxMnchDKbQLkdO9U6e8qJLzNYLP0pkPnPxrh2qjywt_I5SFCTLuUSMLIIAzM31eQuizysr7riwMLHbX8jIuS_2aZ9Nn7YxDtFJzfWLYhoa7MLu-DAdu5XjqyJ1oVXhM8Au1NyRpy7WIlKHVuzqxyEDi5pwKqTehUgWBmX_5eUUysNNmaXkWdbrIMSv9Eq3-9X4i6gWTB4VRuDQ
+2023/08/25 10:34:58      verified with TPM PublicKey
+2023/08/25 10:34:58      verified with exported PubicKey
+
 
 ```
 
@@ -111,11 +119,11 @@ The JWT is formatted as:
 ```json
 {
   "alg": "RS256",
-  "kid": "+0gg+AON1Ig4VoxZXEKMjEi/m0B5NoyX+SkaZdAYZuE",
+  "kid": "OalzExXmgY8n+ot1Fuq3W3RdaMfXwvz6L/rcZMVrQfU",
   "typ": "JWT"
 }
 {
-  "exp": 1638131530,
+  "exp": 1692959758,
   "iss": "test"
 }
 ```
@@ -125,12 +133,15 @@ Where the `keyID` is the base64 encoded hash of the DER public key
 ```bash
 $ openssl rsa -pubin -in util/key.pem -outform DER | openssl sha256
 writing RSA key
-SHA256(stdin)= fb4820f8038dd48838568c595c428c8c48bf9b4079368c97f9291a65d01866e1
+SHA256(stdin)= 39a9731315e6818f27fa8b7516eab75b745d68c7d7c2fcfa2ffadc64c56b41f5
 
-# base64 of hex fb4820f8038dd48838568c595c428c8c48bf9b4079368c97f9291a65d01866e1 --> +0gg+AON1Ig4VoxZXEKMjEi/m0B5NoyX+SkaZdAYZuE=
+# base64 of hex 39a9731315e6818f27fa8b7516eab75b745d68c7d7c2fcfa2ffadc64c56b41f5 --> OalzExXmgY8n+ot1Fuq3W3RdaMfXwvz6L/rcZMVrQfU=
 ```
 
-to use, just import the library configure the TPM.  Remember to set the override so that the correct `alg` is defined in the JWT header
+to use, just import the library configure the TPM.  Remember to set the override so that the correct `alg` is defined in the JWT .
+
+
+You must have a key already defined and persisted to NV (transient keys not supported)
 
 ```golang
 package main
@@ -157,15 +168,13 @@ func main() {
 		Issuer:    "test",
 	}
 
-	// set override
 	tpmjwt.SigningMethodTPMRS256.Override()
-
 	token := jwt.NewWithClaims(tpmjwt.SigningMethodTPMRS256, claims)
 
 	config := &tpmjwt.TPMConfig{
-		TPMDevice:     "/dev/tpm0",
-		KeyHandleFile: "key.bin",
-		KeyTemplate:   tpmjwt.AttestationKeyParametersRSA256,
+		TPMDevice:   "/dev/tpm0",
+		KeyHandle:   0x81008000,
+		KeyTemplate: tpmjwt.AttestationKeyParametersRSA256,
 		//KeyTemplate: tpmjwt.UnrestrictedKeyParametersRSA256,
 	}
 
