@@ -6,7 +6,8 @@ release:
     name: golang-jwt-tpm
   name_template: '{{.Tag}}'
   extra_files:
-
+builds:
+- skip: true
 scoop:
   name: golang-jwt-tpm
   commit_author:
