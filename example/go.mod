@@ -1,16 +1,16 @@
 module main
 
-go 1.17
+go 1.20
 
 require (
 	github.com/golang-jwt/jwt v3.2.2+incompatible
+	github.com/google/go-tpm v0.9.0
+	github.com/google/go-tpm-tools v0.4.0
 	github.com/salrashid123/golang-jwt-tpm v0.0.0
 )
 
 require (
 	github.com/google/go-sev-guest v0.6.1 // indirect
-	github.com/google/go-tpm v0.9.0 // indirect
-	github.com/google/go-tpm-tools v0.3.13-0.20230620182252-4639ecce2aba // indirect
 	github.com/google/logger v1.1.1 // indirect
 	github.com/google/uuid v1.3.0 // indirect
 	github.com/pborman/uuid v1.2.0 // indirect

@@ -2,6 +2,9 @@ package main
 
 import (
 	"context"
+	"crypto/rsa"
+	"crypto/x509"
+	"encoding/pem"
 	"flag"
 	"fmt"
 	"log"
@@ -9,10 +12,24 @@ import (
 
 	"github.com/golang-jwt/jwt"
 	tpmjwt "github.com/salrashid123/golang-jwt-tpm"
+
+	"github.com/google/go-tpm-tools/client"
+	"github.com/google/go-tpm/legacy/tpm2"
+	"github.com/google/go-tpm/tpmutil"
 )
 
 var (
-	persistentHandle = flag.Uint("persistentHandle", 0x81008000, "Handle value")
+	tpmPath          = flag.String("tpm-path", "/dev/tpm0", "Path to the TPM device (character device or a Unix socket).")
+	persistentHandle = flag.Uint("persistentHandle", 0x81008001, "Handle value")
+	template         = flag.String("template", "ak", "Template to use, one of ak|cached")
+	flushHandles     = flag.Bool("flushHandles", false, "FlushTPM Hanldles")
+	handleNames      = map[string][]tpm2.HandleType{
+		"all":       {tpm2.HandleTypeLoadedSession, tpm2.HandleTypeSavedSession, tpm2.HandleTypeTransient},
+		"loaded":    {tpm2.HandleTypeLoadedSession},
+		"saved":     {tpm2.HandleTypeSavedSession},
+		"transient": {tpm2.HandleTypeTransient},
+		"none":      {},
+	}
 )
 
 func main() {
@@ -20,7 +37,36 @@ func main() {
 	flag.Parse()
 	ctx := context.Background()
 
-	var keyctx interface{}
+	log.Printf("======= Init  ========")
+
+	rwc, err := tpm2.OpenTPM(*tpmPath)
+	if err != nil {
+		log.Fatalf("can't open TPM %q: %v", *tpmPath, err)
+	}
+	defer func() {
+		if err := rwc.Close(); err != nil {
+			log.Fatalf("can't close TPM %q: %v", *tpmPath, err)
+		}
+	}()
+
+	if *flushHandles {
+		totalHandles := 0
+		for _, handleType := range handleNames["all"] {
+			handles, err := client.Handles(rwc, handleType)
+			if err != nil {
+				log.Fatalf("getting handles: %v", err)
+			}
+			for _, handle := range handles {
+				if err = tpm2.FlushContext(rwc, handle); err != nil {
+					log.Fatalf("flushing handle 0x%x: %v", handle, err)
+				}
+				log.Printf("Handle 0x%x flushed\n", handle)
+				totalHandles++
+			}
+		}
+		log.Printf("%d handles flushed\n", totalHandles)
+	}
+
 	claims := &jwt.StandardClaims{
 		ExpiresAt: time.Now().Add(time.Minute * 1).Unix(),
 		Issuer:    "test",
@@ -29,11 +75,45 @@ func main() {
 	tpmjwt.SigningMethodTPMRS256.Override()
 	token := jwt.NewWithClaims(tpmjwt.SigningMethodTPMRS256, claims)
 
+	log.Printf("     Load SigningKey from template %s ", *template)
+
+	var k *client.Key
+	switch {
+	case *template == "ak":
+		k, err = client.GceAttestationKeyRSA(rwc)
+	case *template == "cached":
+		if *persistentHandle == 0 {
+			log.Printf("error:  persistentHandle must be specified for cached keys")
+			return
+		}
+		// k, err = client.LoadCachedKey(rwc, tpmutil.Handle(*persistentHandle), client.EKSession{})
+		k, err = client.LoadCachedKey(rwc, tpmutil.Handle(*persistentHandle), nil)
+	default:
+		log.Printf("template type must be one of ak|imported|created")
+		return
+	}
+	if err != nil {
+		log.Printf("ERROR:  could not initialize Key: %v", err)
+		return
+	}
+
+	pubKey := k.PublicKey().(*rsa.PublicKey)
+	akBytes, err := x509.MarshalPKIXPublicKey(pubKey)
+	if err != nil {
+		log.Printf("ERROR:  could not get MarshalPKIXPublicKey: %v", err)
+		return
+	}
+	akPubPEM := pem.EncodeToMemory(
+		&pem.Block{
+			Type:  "PUBLIC KEY",
+			Bytes: akBytes,
+		},
+	)
+	log.Printf("     Signing PEM \n%s", string(akPubPEM))
+
 	config := &tpmjwt.TPMConfig{
-		TPMDevice:   "/dev/tpm0",
-		KeyHandle:   *persistentHandle,
-		KeyTemplate: tpmjwt.AttestationKeyParametersRSA256,
-		//KeyTemplate: tpmjwt.UnrestrictedKeyParametersRSA256,
+		TPMDevice: rwc,
+		Key:       k,
 	}
 
 	keyctx, err := tpmjwt.NewTPMContext(ctx, config)
@@ -41,7 +121,9 @@ func main() {
 		log.Fatalf("Unable to initialize tpmJWT: %v", err)
 	}
 
-	token.Header["kid"] = config.GetKeyID()
+	// optionally set a keyID
+	//token.Header["kid"] = config.GetKeyID()
+
 	tokenString, err := token.SignedString(keyctx)
 	if err != nil {
 		log.Fatalf("Error signing %v", err)
@@ -63,10 +145,10 @@ func main() {
 	}
 
 	// verify with provided RSAPublic key
-	pubKey := config.GetPublicKey()
+	pubKeyr := config.GetPublicKey()
 
 	v, err := jwt.Parse(vtoken.Raw, func(token *jwt.Token) (interface{}, error) {
-		return pubKey, nil
+		return pubKeyr, nil
 	})
 	if v.Valid {
 		log.Println("     verified with exported PubicKey")

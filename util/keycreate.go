@@ -27,21 +27,12 @@ import (
 
 const ()
 
-var (
-	cfg = &certGenConfig{}
-)
-
-type certGenConfig struct {
-	flCN       string
-	flFileName string
-	flSNI      string
-}
+var ()
 
 var (
-	tpmPath       = flag.String("tpm-path", "/dev/tpm0", "Path to the TPM device (character device or a Unix socket).")
-	publicKeyFile = flag.String("publicKeyFile", "key.pem", "PEM File to write the public key")
-	// pemCSRFile = flag.String("pemCSRFile", "key.csr", "CSR File to write to")
-	persistentHandle = flag.Uint("persistentHandle", 0x81008000, "Handle value")
+	tpmPath          = flag.String("tpm-path", "/dev/tpm0", "Path to the TPM device (character device or a Unix socket).")
+	publicKeyFile    = flag.String("publicKeyFile", "key.pem", "PEM File to write the public key")
+	persistentHandle = flag.Uint("persistentHandle", 0x81008001, "Handle value")
 	flushHandles     = flag.Bool("flushHandles", false, "FlushTPM Hanldles")
 	evict            = flag.Bool("evict", false, "Evict prior handle")
 	handleNames      = map[string][]tpm2.HandleType{
@@ -55,20 +46,34 @@ var (
 	keyParameters = client.AKTemplateRSA()
 
 	// using unrestricted key
-	// keyParameters = tpm2.Public{
-	// 	Type:    tpm2.AlgRSA,
-	// 	NameAlg: tpm2.AlgSHA256,
-	// 	Attributes: tpm2.FlagFixedTPM | tpm2.FlagFixedParent | tpm2.FlagSensitiveDataOrigin |
-	// 		tpm2.FlagUserWithAuth | tpm2.FlagSign,
-	// 	AuthPolicy: []byte{},
-	// 	RSAParameters: &tpm2.RSAParams{
-	// 		Sign: &tpm2.SigScheme{
-	// 			Alg:  tpm2.AlgRSASSA,
-	// 			Hash: tpm2.AlgSHA256,
-	// 		},
-	// 		KeyBits: 2048,
-	// 	},
-	// }
+	keyParametersImported = tpm2.Public{
+		Type:       tpm2.AlgRSA,
+		NameAlg:    tpm2.AlgSHA256,
+		Attributes: tpm2.FlagUserWithAuth | tpm2.FlagSign,
+		AuthPolicy: []byte{},
+		RSAParameters: &tpm2.RSAParams{
+			Sign: &tpm2.SigScheme{
+				Alg:  tpm2.AlgRSASSA,
+				Hash: tpm2.AlgSHA256,
+			},
+			KeyBits: 2048,
+		},
+	}
+
+	keyParametersCreated = tpm2.Public{
+		Type:    tpm2.AlgRSA,
+		NameAlg: tpm2.AlgSHA256,
+		Attributes: tpm2.FlagFixedTPM | tpm2.FlagFixedParent | tpm2.FlagSensitiveDataOrigin |
+			tpm2.FlagUserWithAuth | tpm2.FlagSign,
+		AuthPolicy: []byte{},
+		RSAParameters: &tpm2.RSAParams{
+			Sign: &tpm2.SigScheme{
+				Alg:  tpm2.AlgRSASSA,
+				Hash: tpm2.AlgSHA256,
+			},
+			KeyBits: 2048,
+		},
+	}
 )
 
 func main() {
@@ -177,48 +182,4 @@ func main() {
 	}
 	fmt.Printf("JWK Format:\n%s\n", buf)
 
-	// glog.V(2).Infof("======= ContextLoad (k) ========")
-	// kh := tpmutil.Handle(*persistentHandle)
-
-	// kk, err := client.NewCachedKey(rwc, tpm2.HandleOwner, unrestrictedKeyParams, kh)
-	// s, err := kk.GetSigner()
-	// if err != nil {
-	// 	log.Fatalf("can't getSigner %q: %v", tpmPath, err)
-	// }
-
-	// log.Printf("Creating CSR")
-
-	// var csrtemplate = x509.CertificateRequest{
-	// 	Subject: pkix.Name{
-	// 		Organization:       []string{"Acme Co"},
-	// 		OrganizationalUnit: []string{"Enterprise"},
-	// 		Locality:           []string{"Mountain View"},
-	// 		Province:           []string{"California"},
-	// 		Country:            []string{"US"},
-	// 		CommonName:         *san,
-	// 	},
-	// 	DNSNames:           []string{*san},
-	// 	SignatureAlgorithm: x509.SHA256WithRSA,
-	// }
-
-	// csrBytes, err := x509.CreateCertificateRequest(rand.Reader, &csrtemplate, s)
-	// if err != nil {
-	// 	log.Fatalf("Failed to create CSR: %s", err)
-	// }
-
-	// pemdata := pem.EncodeToMemory(
-	// 	&pem.Block{
-	// 		Type:  "CERTIFICATE REQUEST",
-	// 		Bytes: csrBytes,
-	// 	},
-	// )
-	// log.Printf("CSR \b%s\n", string(pemdata))
-
-	// err = ioutil.WriteFile(*pemCSRFile, pemdata, 0644)
-	// if err != nil {
-	// 	log.Fatalf("Could not write file %v", err)
-	// }
-	// log.Printf("CSR written to: %s", *pemCSRFile)
-
 }
-
