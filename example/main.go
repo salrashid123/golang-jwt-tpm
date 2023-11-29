@@ -21,7 +21,7 @@ import (
 var (
 	tpmPath          = flag.String("tpm-path", "/dev/tpm0", "Path to the TPM device (character device or a Unix socket).")
 	persistentHandle = flag.Uint("persistentHandle", 0x81008001, "Handle value")
-	template         = flag.String("template", "ak", "Template to use, one of ak|cached")
+	template         = flag.String("template", "akrsa", "Template to use, one of ak|cached")
 	flushHandles     = flag.Bool("flushHandles", false, "FlushTPM Hanldles")
 	handleNames      = map[string][]tpm2.HandleType{
 		"all":       {tpm2.HandleTypeLoadedSession, tpm2.HandleTypeSavedSession, tpm2.HandleTypeTransient},
@@ -29,6 +29,21 @@ var (
 		"saved":     {tpm2.HandleTypeSavedSession},
 		"transient": {tpm2.HandleTypeTransient},
 		"none":      {},
+	}
+
+	rsaKeyParams = tpm2.Public{
+		Type:    tpm2.AlgRSA,
+		NameAlg: tpm2.AlgSHA256,
+		Attributes: tpm2.FlagFixedTPM | tpm2.FlagFixedParent | tpm2.FlagSensitiveDataOrigin |
+			tpm2.FlagUserWithAuth | tpm2.FlagSign,
+		AuthPolicy: []byte{},
+		RSAParameters: &tpm2.RSAParams{
+			Sign: &tpm2.SigScheme{
+				Alg:  tpm2.AlgRSASSA,
+				Hash: tpm2.AlgSHA256,
+			},
+			KeyBits: 2048,
+		},
 	}
 )
 
@@ -79,8 +94,8 @@ func main() {
 
 	var k *client.Key
 	switch {
-	case *template == "ak":
-		k, err = client.GceAttestationKeyRSA(rwc)
+	case *template == "akrsa":
+		k, err = client.AttestationKeyRSA(rwc)
 	case *template == "cached":
 		if *persistentHandle == 0 {
 			log.Printf("error:  persistentHandle must be specified for cached keys")
@@ -88,6 +103,12 @@ func main() {
 		}
 		// k, err = client.LoadCachedKey(rwc, tpmutil.Handle(*persistentHandle), client.EKSession{})
 		k, err = client.LoadCachedKey(rwc, tpmutil.Handle(*persistentHandle), nil)
+	case *template == "created":
+		if *persistentHandle == 0 {
+			log.Printf("error:  persistentHandle must be specified for created keys")
+			return
+		}
+		k, err = client.NewCachedKey(rwc, tpm2.HandleOwner, rsaKeyParams, tpmutil.Handle(*persistentHandle))
 	default:
 		log.Printf("template type must be one of ak|imported|created")
 		return
