@@ -3,6 +3,7 @@ package tpmjwt
 import (
 	"context"
 	"crypto"
+	"crypto/ecdsa"
 	"encoding/base64"
 	"errors"
 	"fmt"
@@ -34,12 +35,10 @@ func (k *TPMConfig) GetPublicKey() crypto.PublicKey {
 }
 
 var (
-	SigningMethodTPMRS128 *SigningMethodTPM
 	SigningMethodTPMRS256 *SigningMethodTPM
+	SigningMethodTPMES256 *SigningMethodTPM
 	errMissingConfig      = errors.New("tpmjwt: missing configuration in provided context")
 	errMissingTPM         = errors.New("tpmjwt: TPM device not available")
-
-	key client.Key
 )
 
 type SigningMethodTPM struct {
@@ -49,14 +48,11 @@ type SigningMethodTPM struct {
 }
 
 func NewTPMContext(parent context.Context, val *TPMConfig) (context.Context, error) {
-
 	// first check if a TPM is even involved in the picture here since we can verify w/o a TPM
 	if val.TPMDevice == nil || val.Key == nil {
 		return nil, fmt.Errorf("tpmjwt: tpm device or key not set")
 	}
-	// TODO: check ECkey
 	val.publicKeyFromTPM = val.Key.PublicKey()
-
 	return context.WithValue(parent, tpmConfigKey{}, val), nil
 }
 
@@ -75,6 +71,16 @@ func init() {
 	}
 	jwt.RegisterSigningMethod(SigningMethodTPMRS256.Alg(), func() jwt.SigningMethod {
 		return SigningMethodTPMRS256
+	})
+
+	// ES256
+	SigningMethodTPMES256 = &SigningMethodTPM{
+		"TPMES256",
+		jwt.SigningMethodES256,
+		crypto.SHA256,
+	}
+	jwt.RegisterSigningMethod(SigningMethodTPMES256.Alg(), func() jwt.SigningMethod {
+		return SigningMethodTPMES256
 	})
 }
 
@@ -118,28 +124,56 @@ func (s *SigningMethodTPM) Sign(signingString string, key interface{}) (string, 
 	// signer cannot sign restricted Attestation keys yet
 	// https://pkg.go.dev/github.com/google/go-tpm-tools@v0.3.1/client#Key.SignData
 
-	// cryptoSigner, err := kk.GetSigner()
+	// cryptoSigner, err := config.Key.GetSigner()
 	// if err != nil {
 	// 	return "", fmt.Errorf("tpmjwt: can't get Signer %s: %v", config.TPMDevice, err)
 	// }
-	//signedBytes, err := cryptoSigner.Sign(config.TPMDevice, digest, s.hasher)
+	// signedBytes, err := cryptoSigner.Sign(config.TPMDevice, digest, s.hasher)
 	// if err != nil {
 	// 	return "", fmt.Errorf("tpmjwt: can't Sign %s: %v", config.TPMDevice, err)
 	// }
 
 	// So for now we do this the long way
 	//   https://github.com/salrashid123/tpm2/tree/master/sign_with_ak
-	sig, err := tpm2.Sign(config.TPMDevice, config.Key.Handle(), "", digest[:], hashValidation, &tpm2.SigScheme{
-		Alg:  tpm2.AlgRSASSA,
-		Hash: tpm2.AlgSHA256,
-	})
-	if err != nil {
-		return "", fmt.Errorf("failed to sign data: %v", err)
+	var tsig *tpm2.Signature
+	if s.alg == "RS256" {
+		tsig, err = tpm2.Sign(config.TPMDevice, config.Key.Handle(), "", digest[:], hashValidation, &tpm2.SigScheme{
+			Alg:  tpm2.AlgRSASSA,
+			Hash: tpm2.AlgSHA256,
+		})
 	}
+	if s.alg == "ES256" {
+		tsig, err = tpm2.Sign(config.TPMDevice, config.Key.Handle(), "", digest[:], hashValidation, &tpm2.SigScheme{
+			Alg:  tpm2.AlgECDSA,
+			Hash: tpm2.AlgSHA256,
+		})
+	}
+	if err != nil {
+		return "", fmt.Errorf("tpmjwt: can't Sign %s: %v", config.TPMDevice, err)
+	}
+	switch tsig.Alg {
+	case tpm2.AlgRSASSA:
+		return base64.RawURLEncoding.EncodeToString(tsig.RSA.Signature), nil
+	case tpm2.AlgECDSA:
+		// dont' use asn1
+		// sigStruct := struct{ R, S *big.Int }{tsig.ECC.R, tsig.ECC.S}
+		// return asn1.Marshal(sigStruct), nil
 
-	signedBytes := []byte(sig.RSA.Signature)
+		// https://github.com/golang-jwt/jwt/blob/main/ecdsa.go#L92
+		epub := config.publicKeyFromTPM.(*ecdsa.PublicKey)
+		curveBits := epub.Curve.Params().BitSize
+		keyBytes := curveBits / 8
+		if curveBits%8 > 0 {
+			keyBytes += 1
+		}
+		out := make([]byte, 2*keyBytes)
+		tsig.ECC.R.FillBytes(out[0:keyBytes])
+		tsig.ECC.S.FillBytes(out[keyBytes:])
+		return base64.RawURLEncoding.EncodeToString(out), nil
 
-	return base64.RawURLEncoding.EncodeToString(signedBytes), err
+	default:
+		return "", fmt.Errorf("unsupported signing algorithm: %v", tsig.Alg)
+	}
 }
 
 func TPMVerfiyKeyfunc(ctx context.Context, config *TPMConfig) (jwt.Keyfunc, error) {

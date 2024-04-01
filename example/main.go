@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"crypto/ecdsa"
 	"crypto/rsa"
 	"crypto/x509"
 	"encoding/pem"
@@ -21,6 +22,7 @@ import (
 var (
 	tpmPath          = flag.String("tpm-path", "/dev/tpm0", "Path to the TPM device (character device or a Unix socket).")
 	persistentHandle = flag.Uint("persistentHandle", 0x81008001, "Handle value")
+	keyAlg           = flag.String("keyAlg", "RSA", "Key Algorithm")
 	template         = flag.String("template", "akrsa", "Template to use, one of ak|cached")
 	flushHandles     = flag.Bool("flushHandles", false, "FlushTPM Hanldles")
 	handleNames      = map[string][]tpm2.HandleType{
@@ -45,6 +47,22 @@ var (
 			KeyBits: 2048,
 		},
 	}
+
+	eccKeyParams = tpm2.Public{
+		Type:    tpm2.AlgECC,
+		NameAlg: tpm2.AlgSHA256,
+		Attributes: tpm2.FlagFixedTPM | tpm2.FlagFixedParent | tpm2.FlagSensitiveDataOrigin |
+			tpm2.FlagUserWithAuth | tpm2.FlagSign,
+		AuthPolicy: []byte{},
+		ECCParameters: &tpm2.ECCParams{
+			Sign:    &tpm2.SigScheme{Alg: tpm2.AlgECDSA, Hash: tpm2.AlgSHA256},
+			CurveID: tpm2.CurveNISTP256,
+			Point: tpm2.ECPoint{
+				XRaw: make([]byte, 32),
+				YRaw: make([]byte, 32),
+			},
+		},
+	}
 )
 
 func main() {
@@ -53,6 +71,10 @@ func main() {
 	ctx := context.Background()
 
 	log.Printf("======= Init  ========")
+
+	if !(*keyAlg == "RSA" || *keyAlg == "ECC") {
+		log.Fatalf("keyAlg must be either RSA or ECC")
+	}
 
 	rwc, err := tpm2.OpenTPM(*tpmPath)
 	if err != nil {
@@ -87,15 +109,27 @@ func main() {
 		Issuer:    "test",
 	}
 
-	tpmjwt.SigningMethodTPMRS256.Override()
-	token := jwt.NewWithClaims(tpmjwt.SigningMethodTPMRS256, claims)
+	var token *jwt.Token
 
+	if *keyAlg == "RSA" {
+		tpmjwt.SigningMethodTPMRS256.Override()
+		token = jwt.NewWithClaims(tpmjwt.SigningMethodTPMRS256, claims)
+	} else if *keyAlg == "ECC" {
+		tpmjwt.SigningMethodTPMES256.Override()
+		token = jwt.NewWithClaims(tpmjwt.SigningMethodTPMES256, claims)
+	} else {
+		log.Printf("Unknown Key Type %s", *keyAlg)
+	}
 	log.Printf("     Load SigningKey from template %s ", *template)
 
 	var k *client.Key
 	switch {
 	case *template == "akrsa":
 		k, err = client.AttestationKeyRSA(rwc)
+		//k, err = client.GceAttestationKeyRSA(rwc)
+	case *template == "akecc":
+		k, err = client.AttestationKeyECC(rwc)
+		//k, err = client.GceAKCertNVIndexECC(rwc)
 	case *template == "cached":
 		if *persistentHandle == 0 {
 			log.Printf("error:  persistentHandle must be specified for cached keys")
@@ -108,9 +142,13 @@ func main() {
 			log.Printf("error:  persistentHandle must be specified for created keys")
 			return
 		}
-		k, err = client.NewCachedKey(rwc, tpm2.HandleOwner, rsaKeyParams, tpmutil.Handle(*persistentHandle))
+		if *keyAlg == "RSA" {
+			k, err = client.NewCachedKey(rwc, tpm2.HandleOwner, rsaKeyParams, tpmutil.Handle(*persistentHandle))
+		} else if *keyAlg == "ECC" {
+			k, err = client.NewCachedKey(rwc, tpm2.HandleOwner, eccKeyParams, tpmutil.Handle(*persistentHandle))
+		}
 	default:
-		log.Printf("template type must be one of ak|imported|created")
+		log.Printf("template type must be one of akrsa|akecc|imported|created")
 		return
 	}
 	if err != nil {
@@ -118,12 +156,20 @@ func main() {
 		return
 	}
 
-	pubKey := k.PublicKey().(*rsa.PublicKey)
-	akBytes, err := x509.MarshalPKIXPublicKey(pubKey)
+	var akBytes []byte
+
+	if *keyAlg == "RSA" {
+		pubKey := k.PublicKey().(*rsa.PublicKey)
+		akBytes, err = x509.MarshalPKIXPublicKey(pubKey)
+	} else if *keyAlg == "ECC" {
+		pubKey := k.PublicKey().(*ecdsa.PublicKey)
+		akBytes, err = x509.MarshalPKIXPublicKey(pubKey)
+	}
 	if err != nil {
 		log.Printf("ERROR:  could not get MarshalPKIXPublicKey: %v", err)
 		return
 	}
+
 	akPubPEM := pem.EncodeToMemory(
 		&pem.Block{
 			Type:  "PUBLIC KEY",
@@ -171,6 +217,9 @@ func main() {
 	v, err := jwt.Parse(vtoken.Raw, func(token *jwt.Token) (interface{}, error) {
 		return pubKeyr, nil
 	})
+	if err != nil {
+		log.Fatalf("Error parsing token %v", err)
+	}
 	if v.Valid {
 		log.Println("     verified with exported PubicKey")
 	}

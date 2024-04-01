@@ -10,7 +10,7 @@ import (
 	"encoding/json"
 	"encoding/pem"
 	"fmt"
-	"io/ioutil"
+	"os"
 
 	"crypto/sha256"
 	"crypto/x509"
@@ -31,6 +31,7 @@ var ()
 
 var (
 	tpmPath          = flag.String("tpm-path", "/dev/tpm0", "Path to the TPM device (character device or a Unix socket).")
+	keyAlg           = flag.String("keyAlg", "RSA", "Key Algorithm")
 	publicKeyFile    = flag.String("publicKeyFile", "key.pem", "PEM File to write the public key")
 	persistentHandle = flag.Uint("persistentHandle", 0x81008001, "Handle value")
 	flushHandles     = flag.Bool("flushHandles", false, "FlushTPM Hanldles")
@@ -43,7 +44,8 @@ var (
 		"none":      {},
 	}
 	// using attestation key
-	keyParameters = client.AKTemplateRSA()
+	keyParametersRSA = client.AKTemplateRSA()
+	keyParametersECC = client.AKTemplateECC()
 
 	// using unrestricted key
 	keyParametersImported = tpm2.Public{
@@ -60,7 +62,7 @@ var (
 		},
 	}
 
-	keyParametersCreated = tpm2.Public{
+	keyParametersCreatedRSA = tpm2.Public{
 		Type:    tpm2.AlgRSA,
 		NameAlg: tpm2.AlgSHA256,
 		Attributes: tpm2.FlagFixedTPM | tpm2.FlagFixedParent | tpm2.FlagSensitiveDataOrigin |
@@ -74,6 +76,21 @@ var (
 			KeyBits: 2048,
 		},
 	}
+
+	keyParametersCreatedECC = tpm2.Public{
+		Type:    tpm2.AlgECC,
+		NameAlg: tpm2.AlgSHA256,
+		Attributes: tpm2.FlagFixedTPM | tpm2.FlagFixedParent | tpm2.FlagSensitiveDataOrigin |
+			tpm2.FlagUserWithAuth | tpm2.FlagSign,
+		ECCParameters: &tpm2.ECCParams{
+			Sign:    &tpm2.SigScheme{Alg: tpm2.AlgECDSA, Hash: tpm2.AlgSHA256},
+			CurveID: tpm2.CurveNISTP256,
+			Point: tpm2.ECPoint{
+				XRaw: make([]byte, 32),
+				YRaw: make([]byte, 32),
+			},
+		},
+	}
 )
 
 func main() {
@@ -83,11 +100,11 @@ func main() {
 
 	rwc, err := tpm2.OpenTPM(*tpmPath)
 	if err != nil {
-		log.Fatalf("can't open TPM %q: %v", tpmPath, err)
+		log.Fatalf("can't open TPM %q: %v", *tpmPath, err)
 	}
 	defer func() {
 		if err := rwc.Close(); err != nil {
-			log.Fatalf("%v\ncan't close TPM %q: %v", tpmPath, err)
+			log.Fatalf("can't close TPM %q: %v", *tpmPath, err)
 		}
 	}()
 
@@ -109,9 +126,17 @@ func main() {
 		log.Printf("%d handles flushed\n", totalHandles)
 	}
 
-	k, err := client.NewKey(rwc, tpm2.HandleOwner, keyParameters)
+	var k *client.Key
+
+	if *keyAlg == "RSA" {
+		k, err = client.NewKey(rwc, tpm2.HandleOwner, keyParametersRSA)
+	} else if *keyAlg == "ECC" {
+		k, err = client.NewKey(rwc, tpm2.HandleOwner, keyParametersECC)
+	} else {
+		log.Fatalf("unknown key parameter handles: %s", *keyAlg)
+	}
 	if err != nil {
-		log.Fatalf("can't create SRK %q: %v", tpmPath, err)
+		log.Fatalf("can't create SRK %q: %v", *tpmPath, err)
 	}
 
 	log.Printf("     key Name: \n%s", hex.EncodeToString(k.Name().Digest.Value))
@@ -155,7 +180,7 @@ func main() {
 	)
 	log.Printf("     PublicKey: \n%v", string(rakPubPEM))
 
-	err = ioutil.WriteFile(*publicKeyFile, rakPubPEM, 0644)
+	err = os.WriteFile(*publicKeyFile, rakPubPEM, 0644)
 	if err != nil {
 		log.Fatalf("Could not write file %v", err)
 	}
