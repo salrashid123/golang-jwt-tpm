@@ -18,11 +18,10 @@ import (
 
 	"log"
 
-	"github.com/golang/glog"
 	"github.com/google/go-tpm-tools/client"
 	"github.com/google/go-tpm/legacy/tpm2"
 	"github.com/google/go-tpm/tpmutil"
-	"github.com/lestrrat-go/jwx/jwk"
+	"github.com/lestrrat-go/jwx/v2/jwk"
 )
 
 const ()
@@ -148,13 +147,13 @@ func main() {
 	if *evict {
 		err = tpm2.EvictControl(rwc, "", tpm2.HandleOwner, pHandle, pHandle)
 		if err != nil {
-			glog.Fatalf("     Unable evict persistentHandle: %v ", err)
+			log.Fatalf("     Unable evict persistentHandle: %v ", err)
 		}
 	}
 
 	err = tpm2.EvictControl(rwc, "", tpm2.HandleOwner, kh, pHandle)
 	if err != nil {
-		glog.Fatalf("     Unable to set persistentHandle: %v", err)
+		log.Fatalf("     Unable to set persistentHandle: %v", err)
 	}
 	defer tpm2.FlushContext(rwc, kh)
 
@@ -194,7 +193,7 @@ func main() {
 	hasher.Write(der)
 	kid := base64.RawStdEncoding.EncodeToString(hasher.Sum(nil))
 
-	jkey, err := jwk.New(ap)
+	jkey, err := jwk.FromRaw(ap)
 	if err != nil {
 		log.Fatalf("failed to create symmetric key: %s\n", err)
 	}
