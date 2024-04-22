@@ -26,6 +26,12 @@ import (
 	tpm2_load -C primary.ctx -u key.pub -r key.priv -c key.ctx
 	tpm2_evictcontrol -C o -c key.ctx 0x81008001
 
+## RSA-PSS
+	tpm2_createprimary -C e -c primary.ctx
+	tpm2_create -G rsa2048:rsapss:null -g sha256 -u key.pub -r key.priv -C primary.ctx
+	tpm2_load -C primary.ctx -u key.pub -r key.priv -c key.ctx
+	tpm2_evictcontrol -C o -c key.ctx 0x81008001
+
 ## ECC
 	tpm2_createprimary -C e -c primary.ctx
 	tpm2_create -G ecc:ecdsa  -g sha256  -u key.pub -r key.priv -C primary.ctx
@@ -36,7 +42,7 @@ import (
 var (
 	tpmPath          = flag.String("tpm-path", "/dev/tpm0", "Path to the TPM device (character device or a Unix socket).")
 	persistentHandle = flag.Uint("persistentHandle", 0x81008001, "Handle value")
-	template         = flag.String("template", "akrsa", "Template to use, one of ak|cached")
+	mode             = flag.String("mode", "rsa", "which test to run: rsa, rsapss or ecc")
 )
 
 func main() {
@@ -71,13 +77,18 @@ func main() {
 	defer k.Close()
 
 	var pubKey crypto.PublicKey
-	switch k.PublicKey().(type) {
-	case *rsa.PublicKey:
+	switch *mode {
+	case "rsa":
 		tpmjwt.SigningMethodTPMRS256.Override()
 		token = jwt.NewWithClaims(tpmjwt.SigningMethodTPMRS256, claims)
 
 		pubKey = k.PublicKey().(*rsa.PublicKey)
-	case *ecdsa.PublicKey:
+	case "rsapss":
+		tpmjwt.SigningMethodTPMPS256.Override()
+		token = jwt.NewWithClaims(tpmjwt.SigningMethodTPMPS256, claims)
+
+		pubKey = k.PublicKey().(*rsa.PublicKey)
+	case "ecc":
 		tpmjwt.SigningMethodTPMES256.Override()
 		token = jwt.NewWithClaims(tpmjwt.SigningMethodTPMES256, claims)
 

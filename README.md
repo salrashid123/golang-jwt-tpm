@@ -21,6 +21,7 @@ This repo assumes the verifier of the JWT has already established that the RSA k
 The following types are supported
 
 * `RS256`
+* `PS256`
 * `ES256`
 
 against the TPM `OWNER` hierarchy
@@ -102,45 +103,102 @@ For simplicity, the following generates and embeds keys into a persistent handle
 
 #### RSA 
 
-Create RSA key at handle `0x81008001`
+Create RSA key at handle `0x81008001`, RSA-PSS handle at `0x81008005`
 
 ```bash
 # or with tpm2_tools
 # tpm2_flushcontext -t -s -l
 # tpm2_evictcontrol -C o -c 0x81008001
- tpm2_createprimary -C e -c primary.ctx
- tpm2_create -G rsa2048:rsassa:null -g sha256 -u key.pub -r key.priv -C primary.ctx
+## for rsa
+ tpm2_createprimary -C o -c primary.ctx
+ tpm2_create -G rsa2048:rsassa:null -g sha256 -u key.pub -r key.priv -C primary.ctx --format=pem --output=rsa_public.pem
  tpm2_load -C primary.ctx -u key.pub -r key.priv -c key.ctx
  tpm2_evictcontrol -C o -c key.ctx 0x81008001
+
+## rsa-pss
+ tpm2_createprimary -C o -c primary.ctx
+ tpm2_create -G rsa2048:rsapss:null -g sha256 -u key.pub -r key.priv -C primary.ctx  --format=pem --output=rsapss_public.pem
+ tpm2_load -C primary.ctx -u key.pub -r key.priv -c key.ctx
+ tpm2_evictcontrol -C o -c key.ctx 0x81008005 
 ```
 
 Then,
 
 ```bash
 cd example/
-go run nopolicy/main.go --persistentHandle=0x81008001
 
-    2024/04/07 13:03:46 ======= Init  ========
-    2024/04/07 13:03:46      Signing PEM 
-    -----BEGIN PUBLIC KEY-----
-    MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAr2hhvvxAtjSeYi+M07nV
-    weY/JqICYbJ4SsqvBdzguGrYVK9ITuZvHe8z0QG2d/+fCyEb+30rqgoy+0BugImV
-    YdCEg6WZJ/j2Tvj0v1ItmCQoPgNWZ/oqY4U11eSqb1RAho/HWbkCDBZoP1BbdQ/T
-    kdc+JKy94xETK+Mnq26Tr0tK9t4PwxPeXvweWwNB+kSBAWmDO9hJo+UKCysvPZ4K
-    6SMOb8p4HmCjzAZ06VBgfrW/17rcdwKqS6ImDKhzAbkkC15Qdfx71YkZGnvLehi6
-    8FGDF7IHbk846ki5Z91Jvnp5jjcqqQYajYwn7lNHNgMPDS2REoUTzbVHzSAcpVgl
-    9QIDAQAB
-    -----END PUBLIC KEY-----
-    TOKEN: eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.eyJleHAiOjE3MTI0OTUwODYsImlzcyI6InRlc3QifQ.qVb3W2oS0GpgJgNpmsEP4PUKXzSGmihQadLCMYP04_qwlWnYFU7fU3KCTXZ9bpKs92ksRavIPOna_MCPrRj_VJBnEdjl1HGLw0B-_1BLz2JwuwGgOx2NCE-xmkYJJ7bLKiIV8nKbUvJq19GhoKaKzHl2f9Gy4dirKGSE3DztNUuWl3ValFtWyl69FpkJEAEWtQnnDhhQIJ1H3uu4iYJ1AY0L95C502oqD2BSaye0HImHolPN-UkCQ1iEOXMEYNnrllUTfPQ82p875ubvXCnilSasE0ozKOxPLyctkPlssojiM41kdj6-uqaoKvG84zEFGVZUIXk2bc7cFYhj8fR1Lw
-    2024/04/07 13:03:46      verified with TPM PublicKey
-    2024/04/07 13:03:46      verified with exported PubicKey
+## RS256
+$ go run nopolicy/main.go --mode=rsa --persistentHandle=0x81008001
+
+  2024/04/21 12:48:04 ======= Init  ========
+  2024/04/21 12:48:04      Signing PEM 
+  -----BEGIN PUBLIC KEY-----
+  MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAwUgQGTtRGfy/aI3rwXmA
+  LSYWzoGdLGNimDP0r8fLwh2pti01bJIBq+O3i0LlZRoQWNWvVdb2ZpcUfdJFiPRl
+  cZgXLwnJUtPC+1vnMt3KEkjknt3f/WD5eCXL903Wg4BfHISL9myQTcAXB9KC30bb
+  PaELzw3NTR8N999vdU9ny1YL19Ua9gbJlti2jv+8V6CBUxcvlN2YvdvwrRZyyb2n
+  wODKiiUguOJoYbH2+urqiWzuNKi/H8Cm8+cYZBCzdVlb+BT6y9CWRdwh6kJGkSla
+  7EDVMyVysB/urg3ypXvHbDvBMfNTPhfsdZmDfF58LUs7lM7Rr4d/hi2udqFS8ipp
+  nwIDAQAB
+  -----END PUBLIC KEY-----
+  TOKEN: eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJ0ZXN0IiwiZXhwIjoxNzEzNzAzNzQ0fQ.FciBN-71_83nlOTb3ucIf4L2ULUyANqn8H_kLST4LJ7O2keSrSUyOQxZGu32r-9wNJyGbHbE0inDLTEz3L3hp0gkn10WsAMofNQVl4Pefm0lFkkGgJ4RYJyjTi--VA1K52nqjVQwJa_mwGpvVVas7iMZ0IpXvlDOoeWUfCS1E-udKmZjHu-rcgZ8k0Jt16GmlEtCd9Qw4hlJWNSdVPyWtbjYvUV8JNm95raE6Y-7e_EsRF82miUcsj1yTwF22IfAg_RfGe_NsIQqAHU8yczJi9QcTHQna5gmwOWIPNBdABQpTUP2vAUq7cT2XfTlHE_hlONLl66XsUL-tehg4ykubg
+  2024/04/21 12:48:04      verified with TPM PublicKey
+  2024/04/21 12:48:04      verified with exported PubicKey
+
+
+## PS256
+$ go run nopolicy/main.go --mode=rsapss --persistentHandle=0x81008005
+
+  2024/04/21 12:48:22 ======= Init  ========
+  2024/04/21 12:48:22      Signing PEM 
+  -----BEGIN PUBLIC KEY-----
+  MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAnn5LqHf/ZKydt4jXMjoD
+  f1JFQ0pyyoqIiQLvmvJPHWdJmXO3MK0QZGdoaN+vqx3LWX5zcmilbwtrW5uqvNwN
+  IE4Du1moBfeyHJFbICFG/0r1Wx2dPJDpTroqO59QWMzGtyQuCrxNNTnvmt77mhyJ
+  Wu5u4LR7r8PvZpKHKAoGt5ey4238dzZIZU3+it3UcxWJ30d2YklIVxjBDmlgu/NC
+  YSB6mNd7VBN+ha+k5P0KAI2HfBlvd1t8ptQJvTz5QjMzZJ5yg1XEmNDF2kx1Px4A
+  NigN/lR0txgjqwmG+MtQPtp4YMfIp5ZwOWdorUZ8GzIlXktW4qsE08EH6n+ha2rW
+  WwIDAQAB
+  -----END PUBLIC KEY-----
+  TOKEN: eyJhbGciOiJQUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJ0ZXN0IiwiZXhwIjoxNzEzNzAzNzYyfQ.d-2PSl4q7j9QzM8iYN0ggUShnq3ODeKq1fSrqMpMONokK4lH6cEHYl0xFYwkrlsPZxW3z0YKroNZ5Hq-eLrReiMJniPk2sCieX30TrsKcbuFEYlmeZauY0YwAa3BxvlAs9yCe9fx_7GUVqONWK12O22mEToPHG-syp2J89WZxUVdny-bKrWs-9PYbdnHBYx-XokSSIjJj3nivo20mzDtampG1fBNDp7-ZWxyuotS7qH_r5_WfOfyfR_FtsBKF1omBApZA4vQC8n1kRCZ3wUi-PhbgDyvipz3JcxW1J5SvSLZv9UCTwLdtFl6SzBaBFEsuOZ_N3Oy6rK95d5wayjUrw
+  2024/04/21 12:48:22      verified with TPM PublicKey
+  2024/04/21 12:48:22      verified with exported PubicKey
+
 ```
+
+Note the public keys for the tpm's handle ofcourse match
+
+```bash
+# print the public keys
+$ cat rsa_public.pem 
+-----BEGIN PUBLIC KEY-----
+MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAwUgQGTtRGfy/aI3rwXmA
+LSYWzoGdLGNimDP0r8fLwh2pti01bJIBq+O3i0LlZRoQWNWvVdb2ZpcUfdJFiPRl
+cZgXLwnJUtPC+1vnMt3KEkjknt3f/WD5eCXL903Wg4BfHISL9myQTcAXB9KC30bb
+PaELzw3NTR8N999vdU9ny1YL19Ua9gbJlti2jv+8V6CBUxcvlN2YvdvwrRZyyb2n
+wODKiiUguOJoYbH2+urqiWzuNKi/H8Cm8+cYZBCzdVlb+BT6y9CWRdwh6kJGkSla
+7EDVMyVysB/urg3ypXvHbDvBMfNTPhfsdZmDfF58LUs7lM7Rr4d/hi2udqFS8ipp
+nwIDAQAB
+-----END PUBLIC KEY-----
+
+$ cat rsapss_public.pem 
+-----BEGIN PUBLIC KEY-----
+MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAnn5LqHf/ZKydt4jXMjoD
+f1JFQ0pyyoqIiQLvmvJPHWdJmXO3MK0QZGdoaN+vqx3LWX5zcmilbwtrW5uqvNwN
+IE4Du1moBfeyHJFbICFG/0r1Wx2dPJDpTroqO59QWMzGtyQuCrxNNTnvmt77mhyJ
+Wu5u4LR7r8PvZpKHKAoGt5ey4238dzZIZU3+it3UcxWJ30d2YklIVxjBDmlgu/NC
+YSB6mNd7VBN+ha+k5P0KAI2HfBlvd1t8ptQJvTz5QjMzZJ5yg1XEmNDF2kx1Px4A
+NigN/lR0txgjqwmG+MtQPtp4YMfIp5ZwOWdorUZ8GzIlXktW4qsE08EH6n+ha2rW
+WwIDAQAB
+-----END PUBLIC KEY----- 
+```
+
 
 #### ECC 
 
 ```bash
  tpm2_createprimary -C e -c primary.ctx
- tpm2_create -G ecc:ecdsa  -g sha256  -u key.pub -r key.priv -C primary.ctx
+ tpm2_create -G ecc:ecdsa  -g sha256  -u key.pub -r key.priv -C primary.ctx  --format=pem --output=ecc_public.pem
  tpm2_load -C primary.ctx -u key.pub -r key.priv -c key.ctx
  tpm2_evictcontrol -C o -c key.ctx 0x81008002    
 ```
@@ -149,46 +207,23 @@ Then
 
 ```bash
 cd example/
-go run nopolicy/main.go --persistentHandle=0x81008002
 
-    2024/04/07 13:04:59 ======= Init  ========
-    2024/04/07 13:04:59      Signing PEM 
-    -----BEGIN PUBLIC KEY-----
-    MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEYt1Dra/va/RSzH+eQKGDbtr+CE4U
-    7P1wnRR6Hb/S45i/PxI3PdIuZoFzswvVt0sLvSmG1pvyawDHwD04UXT01A==
-    -----END PUBLIC KEY-----
-    TOKEN: eyJhbGciOiJFUzI1NiIsInR5cCI6IkpXVCJ9.eyJleHAiOjE3MTI0OTUxNTksImlzcyI6InRlc3QifQ.cnFyy1ByWW2yFukw3yFbBVyq1nGy63FEx_2a3bL1Wh7EFqJ3z-5Lg7Eh1W-dtYZPVK_k-OExBSjpBIGwJ4aQJQ
-    2024/04/07 13:04:59      verified with TPM PublicKey
-    2024/04/07 13:04:59      verified with exported PubicKey
+$ go run nopolicy/main.go --mode=ecc --persistentHandle=0x81008002
+
+  2024/04/21 12:49:37 ======= Init  ========
+  2024/04/21 12:49:37      Signing PEM 
+  -----BEGIN PUBLIC KEY-----
+  MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEAd6Ei4Xwv/euPIaWw5LXHbbXAQ6B
+  Syvq/jt3yTPeLybanA2CnIOEIns3pFMGbikuy/0FEa/0iAeQdDVpxGwRXg==
+  -----END PUBLIC KEY-----
+  TOKEN: eyJhbGciOiJFUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJ0ZXN0IiwiZXhwIjoxNzEzNzAzODM3fQ.K5qHHoR4sbzPcgxVPbYmXZAyU0u5PRSJ00Aup-A_ddIflXIThIXTlynAXiMg0AGaOEx1JFEkLpBkWbHSsG4q8Q
+  2024/04/21 12:49:37      verified with TPM PublicKey
+  2024/04/21 12:49:37      verified with exported PubicKey
 
 ```
 
 Notice the public key matches the one we saved to the handle
 
-The JWT is formatted as:
-
-
-```json
-{
-  "alg": "RS256",
-  "typ": "JWT"
-}
-{
-  "exp": 1711887476,
-  "iss": "test"
-}
-```
-
-```json
-{
-  "alg": "ES256",
-  "typ": "JWT"
-}
-{
-  "exp": 1711887484,
-  "iss": "test"
-}
-```
 
 You must have a key already defined and persisted to NV (transient keys not supported)
 

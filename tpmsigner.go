@@ -37,6 +37,7 @@ func (k *TPMConfig) GetPublicKey() crypto.PublicKey {
 
 var (
 	SigningMethodTPMRS256 *SigningMethodTPM
+	SigningMethodTPMPS256 *SigningMethodTPM
 	SigningMethodTPMES256 *SigningMethodTPM
 	errMissingConfig      = errors.New("tpmjwt: missing configuration in provided context")
 )
@@ -80,6 +81,16 @@ func init() {
 	}
 	jwt.RegisterSigningMethod(SigningMethodTPMRS256.Alg(), func() jwt.SigningMethod {
 		return SigningMethodTPMRS256
+	})
+
+	// PS256
+	SigningMethodTPMPS256 = &SigningMethodTPM{
+		"TPMPS256",
+		jwt.SigningMethodPS256,
+		crypto.SHA256,
+	}
+	jwt.RegisterSigningMethod(SigningMethodTPMPS256.Alg(), func() jwt.SigningMethod {
+		return SigningMethodTPMPS256
 	})
 
 	// ES256
