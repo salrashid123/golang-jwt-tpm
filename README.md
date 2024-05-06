@@ -166,7 +166,7 @@ $ go run nopolicy/main.go --mode=rsapss --persistentHandle=0x81008005
 
 ```
 
-Note the public keys for the tpm's handle ofcourse match
+Note the public keys for the tpm's handle ofcourse match the respective outputs above
 
 ```bash
 # print the public keys
@@ -237,10 +237,10 @@ using `tpm2_tools`:
 openssl genrsa -out private.pem 2048
 openssl rsa -in private.pem -outform PEM -pubout -out public.pem
 
-	tpm2_createprimary -C o -g sha256 -G rsa -c primary.ctx
-	tpm2_import -C primary.ctx -G rsa2048:rsassa:null -g sha256  -i private.pem -u key.pub -r key.prv
-	tpm2_load -C primary.ctx -u key.pub -r key.prv -c key.ctx
-	tpm2_evictcontrol -C o -c key.ctx 0x81008003
+tpm2_createprimary -C o -g sha256 -G rsa -c primary.ctx
+tpm2_import -C primary.ctx -G rsa2048:rsassa:null -g sha256  -i private.pem -u key.pub -r key.prv
+tpm2_load -C primary.ctx -u key.pub -r key.prv -c key.ctx
+tpm2_evictcontrol -C o -c key.ctx 0x81008003
 
 echo "my message" > message.dat
 tpm2_sign -c key.ctx -g sha256 -o sig1.rssa message.dat
@@ -286,7 +286,7 @@ Which you can initialize though:
 #   sha256:
 #     23: 0xF5A5FD42D16A20302798EF6ED309979B43003D2320D9F0E8EA9831A92759FB4B
 
-## create an auth sesison and the two polcies 
+## create an auth session and the two policies 
 tpm2_startauthsession -S session.dat
 tpm2_policypcr -S session.dat -l sha256:23  -L policy.dat
 tpm2_flushcontext session.dat
@@ -309,4 +309,4 @@ go run policy/main.go --persistentHandle=0x81008004
 ```
 
 
-For more information, see (TPM2 Policy)[https://github.com/salrashid123/tpm2/tree/master/policy]
+For more information, see [TPM2 Policy](https://github.com/salrashid123/tpm2/tree/master/policy)
