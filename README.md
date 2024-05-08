@@ -312,7 +312,7 @@ go run policy/main.go --persistentHandle=0x81008004
 For more information, see [TPM2 Policy](https://github.com/salrashid123/tpm2/tree/master/policy)
 
 
-### Sign/Verify with GCP default AK
+### Sign/Verify with GCP builtin AKCert
 
 vTPMs usially have an EK certificate and template encoded into NV area here described from pg 13 of [TCG EK Credential Profile](https://trustedcomputinggroup.org/wp-content/uploads/TCG_IWG_EKCredentialProfile_v2p4_r3.pdf)
 
@@ -368,7 +368,9 @@ tpm2_nvread -s 1516  -C o $GceAKCertNVIndexRSA |  openssl x509 --inform DER -tex
 To sign with the attestation key (which is available remotely via GCE APIs and even signed by GCE), just specify
 
 ```golang
-sessionKey, err := client.AttestationKeyRSA(rwc)
+// attestation key that is signed by GCE
+sessionKey, err := client.GceAttestationKeyRSA(rwc)
+//sessionKey, err := client.AttestationKeyRSA(rwc)
 ```
 
 also see
