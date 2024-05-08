@@ -310,3 +310,70 @@ go run policy/main.go --persistentHandle=0x81008004
 
 
 For more information, see [TPM2 Policy](https://github.com/salrashid123/tpm2/tree/master/policy)
+
+
+### Sign/Verify with GCP default AK
+
+vTPMs usially have an EK certificate and template encoded into NV area here described from pg 13 of [TCG EK Credential Profile](https://trustedcomputinggroup.org/wp-content/uploads/TCG_IWG_EKCredentialProfile_v2p4_r3.pdf)
+
+```
+2.2.1.4 Low Range
+The Low Range is at NV Indices 0x01c00002 - 0x01c0000c.
+0x01c00002 RSA 2048 EK Certificate
+0x01c00003 RSA 2048 EK Nonce
+0x01c00004 RSA 2048 EK Template
+0x01c0000a ECC NIST P256 EK Certificate
+0x01c0000b ECC NIST P256 EK Nonce
+0x01c0000c ECC NIST P256 EK Template
+```
+
+To see this and read cthe EKCertificate, 
+```bash
+export TPM2_EK_NV_INDEX=0x1c00002
+tpm2_nvreadpublic | sed -n -e "/""$TPM2_EK_NV_INDEX""/,\$p" | sed -e '/^[ \r\n\t]*$/,$d' | grep "size" | sed 's/.*size.*://' | sed -e 's/^[[:space:]]*//' | sed -e 's/[[:space:]]$//'
+## note the 1422 is just the size i saw on NV for the cert, yours will be different
+tpm2_nvread -s 1422  -C o $TPM2_EK_NV_INDEX |  openssl x509 --inform DER -text -noout  -in -
+```
+
+However, GCE VMs encodes a default the Attestation Certificate into NV area here:
+
+```golang
+	// RSA 2048 AK.
+	GceAKCertNVIndexRSA     uint32 = 0x01c10000
+	GceAKTemplateNVIndexRSA uint32 = 0x01c10001
+```
+
+which you can read in directly:
+
+```bash
+$ tpm2_nvreadpublic 
+
+
+0x1c10000:
+  name: 000bc1dcc77bde4982d4817bcbe8418d49c1f24e3a017e79e1be9d25f6bc50c0f7c2
+  hash algorithm:
+    friendly: sha256
+    value: 0xB
+  attributes:
+    friendly: ppwrite|writedefine|ppread|ownerread|authread|no_da|written|platformcreate
+    value: 0x62072001
+  size: 1516
+
+
+export GceAKCertNVIndexRSA=0x01c10000
+## >>>note the size for me was 1516
+tpm2_nvread -s 1516  -C o $GceAKCertNVIndexRSA |  openssl x509 --inform DER -text -noout  -in -
+```
+
+To sign with the attestation key (which is available remotely via GCE APIs and even signed by GCE), just specify
+
+```golang
+sessionKey, err := client.AttestationKeyRSA(rwc)
+```
+
+also see
+
+- [Sign, Verify and decode using Google Cloud vTPM Endorsement and Attestation Key and Certificate](https://github.com/salrashid123/gcp-vtpm-ek-ak)
+- [Sign with AK saved to NV (gce only)](https://github.com/salrashid123/tpm2/tree/master/ak_sign_nv)
+- [go-tpm-tools.client.GceAttestationKeyRSA()](https://pkg.go.dev/github.com/google/go-tpm-tools/client#GceAttestationKeyRSA)
+
