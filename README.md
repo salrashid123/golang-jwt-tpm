@@ -83,12 +83,36 @@ gcloud compute  instances create   tpm-device     \
    --shielded-secure-boot --shielded-vtpm --shielded-integrity-monitoring  \
    --image-family=debian-11 --image-project=debian-cloud
 
-# ssh to VM
+# ssh to VM, install tpm2_tools from source
+sudo su -
 apt-get update
-apt-get install tpm2-tools
-# wget https://go.dev/dl/go1.22.2.linux-amd64.tar.gz
-#rm -rf /usr/local/go && tar -C /usr/local -xzf go1.22.2.linux-amd64.tar.gz
-# export PATH=$PATH:/usr/local/go/bin
+
+apt -y install   autoconf-archive   libcmocka0   libcmocka-dev   procps  \
+   iproute2   build-essential   git   pkg-config   gcc   libtool   automake \
+     libssl-dev   uthash-dev   autoconf   doxygen  libcurl4-openssl-dev dbus-x11 libglib2.0-dev libjson-c-dev acl
+
+cd
+git clone https://github.com/tpm2-software/tpm2-tss.git
+  cd tpm2-tss
+  ./bootstrap
+  ./configure --with-udevrulesdir=/etc/udev/rules.d
+  make -j$(nproc)
+  make install
+  udevadm control --reload-rules && sudo udevadm trigger
+  ldconfig
+
+cd
+git clone https://github.com/tpm2-software/tpm2-tools.git
+  cd tpm2-tools
+  ./bootstrap
+  ./configure
+  make check
+  make install
+
+
+wget https://go.dev/dl/go1.22.2.linux-amd64.tar.gz
+rm -rf /usr/local/go && tar -C /usr/local -xzf go1.22.2.linux-amd64.tar.gz
+export PATH=$PATH:/usr/local/go/bin
 ```
 
 Once on the VM, create a key on TPM (if you already have an existing key on TPM, you can acquire a handle using `go-tpm-tools`).  For now, create a key
@@ -245,7 +269,6 @@ tpm2_evictcontrol -C o -c key.ctx 0x81008003
 echo "my message" > message.dat
 tpm2_sign -c key.ctx -g sha256 -o sig1.rssa message.dat
 tpm2_verifysignature -c key.ctx -g sha256 -s sig1.rssa -m message.dat
-tpm2_evictcontrol -C o -c key.ctx 0x81008003
 ```
 
 You can also see how to load the entire chain here [Loading TPM key chains](https://github.com/salrashid123/tpm2/context_chain)
