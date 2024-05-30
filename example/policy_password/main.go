@@ -25,7 +25,6 @@ import (
 var (
 	tpmPath          = flag.String("tpm-path", "127.0.0.1:2321", "Path to the TPM device (character device or a Unix socket).")
 	persistentHandle = flag.Uint("persistentHandle", 0x81008001, "Handle value")
-	mode             = flag.String("mode", "rsa", "which test to run: rsa, rsapss or ecc")
 )
 
 var TPMDEVICES = []string{"/dev/tpm0", "/dev/tpmrm0"}
@@ -66,9 +65,19 @@ func main() {
 
 	var token *jwt.Token
 
+	rootPass := []byte("pass1")
+	keyPass := []byte("pass2")
+
 	primaryKey, err := tpm2.CreatePrimary{
 		PrimaryHandle: tpm2.TPMRHOwner,
 		InPublic:      tpm2.New2B(tpm2.RSASRKTemplate),
+		InSensitive: tpm2.TPM2BSensitiveCreate{
+			Sensitive: &tpm2.TPMSSensitiveCreate{
+				UserAuth: tpm2.TPM2BAuth{
+					Buffer: rootPass,
+				},
+			},
+		},
 	}.Execute(rwr)
 	if err != nil {
 		log.Fatalf("can't create primary %v", err)
@@ -87,80 +96,33 @@ func main() {
 		ObjectHandle: tpm2.TPMHandle(*persistentHandle),
 	}.Execute(rwr)
 	if err != nil {
-		log.Fatalf("error executing tpm2.ReadPublic %v", err)
+		log.Fatalf("tpmjwt: error executing tpm2.ReadPublic %v", err)
 	}
 
 	outPub, err := pub.OutPublic.Contents()
 	if err != nil {
-		log.Fatalf("error reading public contexts %v", err)
+		log.Fatalf("tpmjwt: error reading public contexts %v", err)
 	}
-
 	var pubKey crypto.PublicKey
-	switch *mode {
-	case "rsa":
-		tpmjwt.SigningMethodTPMRS256.Override()
-		token = jwt.NewWithClaims(tpmjwt.SigningMethodTPMRS256, claims)
 
-		rsaDetail, err := outPub.Parameters.RSADetail()
-		if err != nil {
-			log.Fatalf("error reading rsa public %v", err)
-		}
-		rsaUnique, err := outPub.Unique.RSA()
-		if err != nil {
-			log.Fatalf("error reading rsa unique %v", err)
-		}
+	tpmjwt.SigningMethodTPMRS256.Override()
+	token = jwt.NewWithClaims(tpmjwt.SigningMethodTPMRS256, claims)
 
-		rsaPub, err := tpm2.RSAPub(rsaDetail, rsaUnique)
-		if err != nil {
-			log.Fatalf("Failed to get rsa public key: %v", err)
-		}
-
-		pubKey = rsaPub
-	case "rsapss":
-		tpmjwt.SigningMethodTPMPS256.Override()
-		token = jwt.NewWithClaims(tpmjwt.SigningMethodTPMPS256, claims)
-
-		rsaDetail, err := outPub.Parameters.RSADetail()
-		if err != nil {
-			log.Fatalf("error reading rsa public %v", err)
-		}
-		rsaUnique, err := outPub.Unique.RSA()
-		if err != nil {
-			log.Fatalf("error reading rsa unique %v", err)
-		}
-
-		rsaPub, err := tpm2.RSAPub(rsaDetail, rsaUnique)
-		if err != nil {
-			log.Fatalf("Failed to get rsa public key: %v", err)
-		}
-
-		pubKey = rsaPub
-	case "ecc":
-		tpmjwt.SigningMethodTPMES256.Override()
-		token = jwt.NewWithClaims(tpmjwt.SigningMethodTPMES256, claims)
-
-		eccDetail, err := outPub.Parameters.ECCDetail()
-		if err != nil {
-			log.Fatalf("error reading ec details %v", err)
-		}
-		ecUnique, err := outPub.Unique.ECC()
-		if err != nil {
-			log.Fatalf("error reading ec unique %v", err)
-		}
-
-		crv, err := eccDetail.CurveID.ECDHCurve()
-		if err != nil {
-			log.Fatalf("error reading ec curve %v", err)
-		}
-		pubKey, err = tpm2.ECDHPubKey(crv, ecUnique)
-		if err != nil {
-			log.Fatalf("Failed to get ecc public key: %v", err)
-		}
-
-	default:
-		log.Printf(" unsupported mode %s", *mode)
-		return
+	rsaDetail, err := outPub.Parameters.RSADetail()
+	if err != nil {
+		log.Fatalf("tpmjwt: error reading rsa public %v", err)
 	}
+	rsaUnique, err := outPub.Unique.RSA()
+	if err != nil {
+		log.Fatalf("tpmjwt: error reading rsa unique %v", err)
+	}
+
+	rsaPub, err := tpm2.RSAPub(rsaDetail, rsaUnique)
+	if err != nil {
+		log.Fatalf("Failed to get rsa public key: %v", err)
+	}
+
+	pubKey = rsaPub
 
 	akBytes, err := x509.MarshalPKIXPublicKey(pubKey)
 	if err != nil {
@@ -179,7 +141,7 @@ func main() {
 	config := &tpmjwt.TPMConfig{
 		TPMDevice: rwc,
 		Handle:    tpm2.TPMHandle(*persistentHandle),
-		//Session:   tpm2.PasswordAuth(nil),
+		Session:   tpm2.PasswordAuth(keyPass),
 	}
 
 	keyctx, err := tpmjwt.NewTPMContext(ctx, config)
@@ -213,7 +175,7 @@ func main() {
 	// verify with provided RSAPublic key
 	pubKeyr := config.GetPublicKey()
 
-	v, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
+	v, err := jwt.Parse(vtoken.Raw, func(token *jwt.Token) (interface{}, error) {
 		return pubKeyr, nil
 	})
 	if err != nil {

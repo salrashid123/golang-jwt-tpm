@@ -4,25 +4,32 @@ import (
 	"context"
 	"crypto"
 	"crypto/ecdsa"
-	"encoding/asn1"
+	"crypto/rsa"
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"math/big"
 
 	jwt "github.com/golang-jwt/jwt/v5"
 
-	"github.com/google/go-tpm-tools/client"
-	"github.com/google/go-tpm/legacy/tpm2"
+	"github.com/google/go-tpm/tpm2"
+	"github.com/google/go-tpm/tpm2/transport"
+
+	_ "crypto/sha256"
 )
 
 // Much of this implementation is inspired templated form [gcp-jwt-go](https://github.com/someone1/gcp-jwt-go)
 
 type TPMConfig struct {
 	TPMDevice        io.ReadWriteCloser
-	Key              *client.Key      // load a key from handle
+	Handle           tpm2.TPMHandle   // load a key from handle
+	Session          tpm2.Session     // (optional) session to use, defaults to tpm2.PasswordAuth(nil)
 	KeyID            string           // (optional) the TPM keyID (normally the key "Name")
 	publicKeyFromTPM crypto.PublicKey // the public key as read from KeyHandleFile, KeyHandleNV
+	name             tpm2.TPM2BName
+	EncryptionHandle tpm2.TPMHandle   // (optional) handle to use for transit encryption
+	EncryptionPub    *tpm2.TPMTPublic // (optional) public key to use for transit encryption
 }
 
 type tpmConfigKey struct{}
@@ -50,19 +57,72 @@ type SigningMethodTPM struct {
 
 func NewTPMContext(parent context.Context, val *TPMConfig) (context.Context, error) {
 	// first check if a TPM is even involved in the picture here since we can verify w/o a TPM
-	if val.TPMDevice == nil || val.Key == nil {
+	if val.TPMDevice == nil || val.Handle == 0 {
 		return nil, fmt.Errorf("tpmjwt: tpm device or key not set")
 	}
-	switch val.Key.PublicArea().Type {
-	case tpm2.AlgRSA:
-		// do optional validation
-	case tpm2.AlgECC:
-		// do optional validation
-	default:
-		return nil, fmt.Errorf("tpmjwt: unsupported Algorithm %s", val.Key.PublicArea().Type)
+	rwr := transport.FromReadWriter(val.TPMDevice)
+
+	pub, err := tpm2.ReadPublic{
+		ObjectHandle: tpm2.TPMHandle(val.Handle.HandleValue()),
+	}.Execute(rwr)
+	if err != nil {
+		return nil, fmt.Errorf("tpmjwt: error executing tpm2.ReadPublic %v", err)
 	}
 
-	val.publicKeyFromTPM = val.Key.PublicKey()
+	if val.Session == nil {
+		val.Session = tpm2.PasswordAuth(nil)
+	}
+
+	outPub, err := pub.OutPublic.Contents()
+	if err != nil {
+		return nil, fmt.Errorf("tpmjwt: error reading public contexts %v", err)
+	}
+
+	val.name = pub.Name
+
+	var keyPub crypto.PublicKey
+
+	switch outPub.Type {
+	case tpm2.TPMAlgRSA:
+		rsaDetail, err := outPub.Parameters.RSADetail()
+		if err != nil {
+			return nil, fmt.Errorf("tpmjwt: error reading rsa public %v", err)
+		}
+		rsaUnique, err := outPub.Unique.RSA()
+		if err != nil {
+			return nil, fmt.Errorf("tpmjwt: error reading rsa unique %v", err)
+		}
+
+		rsaPub, err := tpm2.RSAPub(rsaDetail, rsaUnique)
+		if err != nil {
+			log.Fatalf("Failed to get rsa public key: %v", err)
+		}
+		keyPub = rsaPub
+	case tpm2.TPMAlgECC:
+		ecDetail, err := outPub.Parameters.ECCDetail()
+		if err != nil {
+			return nil, fmt.Errorf("tpmjwt: error reading ec details %v", err)
+		}
+		crv, err := ecDetail.CurveID.Curve()
+		if err != nil {
+			return nil, fmt.Errorf("tpmjwt: error reading ecc curve %v", err)
+		}
+		eccUnique, err := outPub.Unique.ECC()
+		if err != nil {
+			return nil, fmt.Errorf("tpmjwt: error reading ecc unique %v", err)
+		}
+
+		pubKey := &ecdsa.PublicKey{
+			Curve: crv,
+			X:     big.NewInt(0).SetBytes(eccUnique.X.Buffer),
+			Y:     big.NewInt(0).SetBytes(eccUnique.Y.Buffer),
+		}
+		keyPub = pubKey
+	default:
+		return nil, fmt.Errorf("tpmjwt: unsupported Algorithm %v", outPub.Type)
+	}
+
+	val.publicKeyFromTPM = keyPub
 	return context.WithValue(parent, tpmConfigKey{}, val), nil
 }
 
@@ -134,33 +194,139 @@ func (s *SigningMethodTPM) Sign(signingString string, key interface{}) ([]byte, 
 	if !ok {
 		return nil, errMissingConfig
 	}
-	tsig, err := config.Key.SignData([]byte(signingString))
-	if err != nil {
-		return nil, fmt.Errorf("tpmjwt: can't Sign %s: %v", config.TPMDevice, err)
+	var tsig []byte
+
+	h := s.hasher.New()
+	_, err := h.Write([]byte(signingString))
+	if !ok {
+		return nil, err
+	}
+	digest := h.Sum(nil)
+
+	rwr := transport.FromReadWriter(config.TPMDevice)
+
+	var sess tpm2.Session
+	//  check if we should use parameter encryption...if so, just use the EK for now
+	if config.EncryptionHandle != 0 && config.EncryptionPub != nil {
+		sess = tpm2.HMAC(tpm2.TPMAlgSHA256, 16, tpm2.AESEncryption(128, tpm2.EncryptIn), tpm2.Salted(config.EncryptionHandle, *config.EncryptionPub))
+	} else {
+		sess = tpm2.HMAC(tpm2.TPMAlgSHA256, 16, tpm2.AESEncryption(128, tpm2.EncryptIn))
 	}
 
-	if config.Key.PublicArea().Type == tpm2.AlgECC {
-		// go-tpm-tools formats ECC signatures as asn1 but JWT expects raw so convert
-		// the asn1 back
-		epub, ok := config.Key.PublicKey().(*ecdsa.PublicKey)
-		if !ok {
-			return nil, fmt.Errorf("tpmjwt: error converting ECC keytype %v", err)
+	switch pub := config.publicKeyFromTPM.(type) {
+	case *rsa.PublicKey:
+		if s.Alg() == "RS256" {
+			rspSign, err := tpm2.Sign{
+				KeyHandle: tpm2.AuthHandle{
+					Handle: tpm2.TPMHandle(config.Handle.HandleValue()),
+					Name:   config.name,
+					Auth:   config.Session,
+				},
+				Digest: tpm2.TPM2BDigest{
+					Buffer: digest[:],
+				},
+				InScheme: tpm2.TPMTSigScheme{
+					Scheme: tpm2.TPMAlgRSASSA,
+					Details: tpm2.NewTPMUSigScheme(
+						tpm2.TPMAlgRSASSA,
+						&tpm2.TPMSSchemeHash{
+							HashAlg: tpm2.TPMAlgSHA256,
+						},
+					),
+				},
+				Validation: tpm2.TPMTTKHashCheck{
+					Tag: tpm2.TPMSTHashCheck,
+				},
+			}.Execute(rwr, sess)
+			if err != nil {
+				return nil, fmt.Errorf("tpmjwt: can't Sign: %v", err)
+			}
+
+			rsig, err := rspSign.Signature.Signature.RSASSA()
+			if err != nil {
+				return nil, fmt.Errorf("tpmjwt: error getting rsa signature: %v", err)
+			}
+			tsig = rsig.Sig.Buffer
+
+		} else if s.Alg() == "PS256" {
+			rspSign, err := tpm2.Sign{
+				KeyHandle: tpm2.AuthHandle{
+					Handle: tpm2.TPMHandle(config.Handle.HandleValue()),
+					Name:   config.name,
+					Auth:   config.Session,
+				},
+				Digest: tpm2.TPM2BDigest{
+					Buffer: digest[:],
+				},
+				InScheme: tpm2.TPMTSigScheme{
+					Scheme: tpm2.TPMAlgRSAPSS,
+					Details: tpm2.NewTPMUSigScheme(
+						tpm2.TPMAlgRSAPSS,
+						&tpm2.TPMSSchemeHash{
+							HashAlg: tpm2.TPMAlgSHA256,
+						},
+					),
+				},
+				Validation: tpm2.TPMTTKHashCheck{
+					Tag: tpm2.TPMSTHashCheck,
+				},
+			}.Execute(rwr, sess)
+			if err != nil {
+				return nil, fmt.Errorf("tpmjwt: can't Sign pss %v", err)
+			}
+
+			rsig, err := rspSign.Signature.Signature.RSAPSS()
+			if err != nil {
+				return nil, fmt.Errorf("tpmjwt: error getting rsa pss signature %v", err)
+			}
+
+			tsig = rsig.Sig.Buffer
+		} else {
+			return nil, fmt.Errorf("tpmjwt: unsupported rsa algorithm %s", s.Alg())
 		}
-		curveBits := epub.Params().BitSize
-		keyBytes := curveBits / 8
-		if curveBits%8 > 0 {
-			keyBytes += 1
+
+	case *ecdsa.PublicKey:
+		if s.Alg() == "ES256" {
+			rspSign, err := tpm2.Sign{
+				KeyHandle: tpm2.AuthHandle{
+					Handle: tpm2.TPMHandle(config.Handle.HandleValue()),
+					Name:   config.name,
+					Auth:   config.Session,
+				},
+				Digest: tpm2.TPM2BDigest{
+					Buffer: digest[:],
+				},
+				InScheme: tpm2.TPMTSigScheme{
+					Scheme: tpm2.TPMAlgECDSA,
+					Details: tpm2.NewTPMUSigScheme(
+						tpm2.TPMAlgECDSA,
+						&tpm2.TPMSSchemeHash{
+							HashAlg: tpm2.TPMAlgSHA256,
+						},
+					),
+				},
+				Validation: tpm2.TPMTTKHashCheck{
+					Tag: tpm2.TPMSTHashCheck,
+				},
+			}.Execute(rwr, tpm2.HMAC(tpm2.TPMAlgSHA256, 16, tpm2.AESEncryption(128, tpm2.EncryptIn)))
+			if err != nil {
+				return nil, fmt.Errorf("tpmjwt: can't Sign ecc: %v", err)
+			}
+
+			rsig, err := rspSign.Signature.Signature.ECDSA()
+			if err != nil {
+				return nil, fmt.Errorf("tpmjwt: getting rsa ecc signature: %v", err)
+			}
+			out := append(rsig.SignatureR.Buffer, rsig.SignatureS.Buffer...)
+			return out, nil
+
+		} else {
+			return nil, fmt.Errorf("tpmjwt: unsupported EC algorithm %s", s.Alg())
 		}
-		out := make([]byte, 2*keyBytes)
-		var sigStruct struct{ R, S *big.Int }
-		_, err := asn1.Unmarshal(tsig, &sigStruct)
-		if err != nil {
-			return nil, fmt.Errorf("tpmjwt: can't unmarshall ecc struct %v", err)
-		}
-		sigStruct.R.FillBytes(out[0:keyBytes])
-		sigStruct.S.FillBytes(out[keyBytes:])
-		return out, nil
+	default:
+		return nil, fmt.Errorf("tpmjwt: unsupported public key type %v", pub)
 	}
+
 	return tsig, nil
 }
 
