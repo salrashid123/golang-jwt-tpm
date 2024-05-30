@@ -826,6 +826,22 @@ func TestTPMSessionEncryption(t *testing.T) {
 	defer tpmDevice.Close()
 
 	rwr := transport.FromReadWriter(tpmDevice)
+
+	createEKCmd := tpm2.CreatePrimary{
+		PrimaryHandle: tpm2.TPMRHEndorsement,
+		InPublic:      tpm2.New2B(tpm2.RSAEKTemplate),
+	}
+	createEKRsp, err := createEKCmd.Execute(rwr)
+	require.NoError(t, err)
+	defer func() {
+		flushContextCmd := tpm2.FlushContext{
+			FlushHandle: createEKRsp.ObjectHandle,
+		}
+		_, _ = flushContextCmd.Execute(rwr)
+	}()
+	encryptionPub, err := createEKRsp.OutPublic.Contents()
+	require.NoError(t, err)
+
 	primaryKey, err := tpm2.CreatePrimary{
 		PrimaryHandle: tpm2.TPMRHOwner,
 		InPublic:      tpm2.New2B(tpm2.RSASRKTemplate),
@@ -865,9 +881,11 @@ func TestTPMSessionEncryption(t *testing.T) {
 	token := jwt.NewWithClaims(SigningMethodTPMRS256, claims)
 
 	config := &TPMConfig{
-		TPMDevice: tpmDevice,
-		Handle:    tpm2.TPMHandle(rsaKeyResponse.ObjectHandle),
-		Session:   tpm2.PasswordAuth(nil),
+		TPMDevice:        tpmDevice,
+		Handle:           tpm2.TPMHandle(rsaKeyResponse.ObjectHandle),
+		Session:          tpm2.PasswordAuth(nil),
+		EncryptionHandle: createEKRsp.ObjectHandle,
+		EncryptionPub:    encryptionPub,
 	}
 	keyctx, err := NewTPMContext(context.Background(), config)
 	require.NoError(t, err)
