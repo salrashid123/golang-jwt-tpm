@@ -757,7 +757,7 @@ func TestTPMPolicyPCRFail(t *testing.T) {
 			PCRSelections: []tpm2.TPMSPCRSelection{
 				{
 					Hash:      tpm2.TPMAlgSHA256,
-					PCRSelect: tpm2.PCClientCompatible.PCRs(uint(1)),
+					PCRSelect: tpm2.PCClientCompatible.PCRs(uint(pcr)),
 				},
 			},
 		},
