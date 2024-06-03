@@ -23,8 +23,7 @@ import (
 
 type TPMConfig struct {
 	TPMDevice        io.ReadWriteCloser
-	Handle           tpm2.TPMHandle   // load a key from handle
-	Session          tpm2.Session     // (optional) session to use, defaults to tpm2.PasswordAuth(nil)
+	AuthHandle       *tpm2.AuthHandle // load a key from auth handle
 	KeyID            string           // (optional) the TPM keyID (normally the key "Name")
 	publicKeyFromTPM crypto.PublicKey // the public key as read from KeyHandleFile, KeyHandleNV
 	name             tpm2.TPM2BName
@@ -57,20 +56,16 @@ type SigningMethodTPM struct {
 
 func NewTPMContext(parent context.Context, val *TPMConfig) (context.Context, error) {
 	// first check if a TPM is even involved in the picture here since we can verify w/o a TPM
-	if val.TPMDevice == nil || val.Handle == 0 {
+	if val.TPMDevice == nil || val.AuthHandle == nil {
 		return nil, fmt.Errorf("tpmjwt: tpm device or key not set")
 	}
 	rwr := transport.FromReadWriter(val.TPMDevice)
 
 	pub, err := tpm2.ReadPublic{
-		ObjectHandle: tpm2.TPMHandle(val.Handle.HandleValue()),
+		ObjectHandle: tpm2.TPMHandle(val.AuthHandle.HandleValue()),
 	}.Execute(rwr)
 	if err != nil {
 		return nil, fmt.Errorf("tpmjwt: error executing tpm2.ReadPublic %v", err)
-	}
-
-	if val.Session == nil {
-		val.Session = tpm2.PasswordAuth(nil)
 	}
 
 	outPub, err := pub.OutPublic.Contents()
@@ -217,11 +212,7 @@ func (s *SigningMethodTPM) Sign(signingString string, key interface{}) ([]byte, 
 	case *rsa.PublicKey:
 		if s.Alg() == "RS256" {
 			rspSign, err := tpm2.Sign{
-				KeyHandle: tpm2.AuthHandle{
-					Handle: tpm2.TPMHandle(config.Handle.HandleValue()),
-					Name:   config.name,
-					Auth:   config.Session,
-				},
+				KeyHandle: *config.AuthHandle,
 				Digest: tpm2.TPM2BDigest{
 					Buffer: digest[:],
 				},
@@ -250,11 +241,7 @@ func (s *SigningMethodTPM) Sign(signingString string, key interface{}) ([]byte, 
 
 		} else if s.Alg() == "PS256" {
 			rspSign, err := tpm2.Sign{
-				KeyHandle: tpm2.AuthHandle{
-					Handle: tpm2.TPMHandle(config.Handle.HandleValue()),
-					Name:   config.name,
-					Auth:   config.Session,
-				},
+				KeyHandle: *config.AuthHandle,
 				Digest: tpm2.TPM2BDigest{
 					Buffer: digest[:],
 				},
@@ -288,11 +275,7 @@ func (s *SigningMethodTPM) Sign(signingString string, key interface{}) ([]byte, 
 	case *ecdsa.PublicKey:
 		if s.Alg() == "ES256" {
 			rspSign, err := tpm2.Sign{
-				KeyHandle: tpm2.AuthHandle{
-					Handle: tpm2.TPMHandle(config.Handle.HandleValue()),
-					Name:   config.name,
-					Auth:   config.Session,
-				},
+				KeyHandle: *config.AuthHandle,
 				Digest: tpm2.TPM2BDigest{
 					Buffer: digest[:],
 				},

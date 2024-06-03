@@ -28,6 +28,10 @@ import (
 /*
 Load a key using https://github.com/Foxboron/go-tpm-keyfiles
 
+also see:
+
+	https://gist.github.com/salrashid123/9822b151ebb66f4083c5f71fd4cdbe40
+
 $ go run go_keyfile_compat/main.go
 
 2024/05/30 11:20:36 ======= Init  ========
@@ -293,10 +297,21 @@ func main() {
 	)
 	log.Printf("     Signing PEM \n%s", string(akPubPEM))
 
+	rpub, err := tpm2.ReadPublic{
+		ObjectHandle: regenRSAKey.ObjectHandle,
+	}.Execute(rwr)
+	if err != nil {
+		log.Printf("ERROR:  could not get MarshalPKIXPublicKey: %v", err)
+		return
+	}
+
 	config := &tpmjwt.TPMConfig{
 		TPMDevice: rwc,
-		Handle:    tpm2.TPMHandle(regenRSAKey.ObjectHandle),
-		Session:   tpm2.PasswordAuth(nil),
+		AuthHandle: &tpm2.AuthHandle{
+			Handle: regenRSAKey.ObjectHandle,
+			Name:   rpub.Name,
+			Auth:   tpm2.PasswordAuth(nil),
+		},
 	}
 
 	keyctx, err := tpmjwt.NewTPMContext(ctx, config)

@@ -150,10 +150,17 @@ func main() {
 		log.Fatalf("Unable to initialize tpmJWT: %v", err)
 	}
 
+	rpub, err := tpm2.ReadPublic{
+		ObjectHandle: tpm2.TPMHandle(*persistentHandle),
+	}.Execute(rwr)
+
 	config := &tpmjwt.TPMConfig{
 		TPMDevice: rwc,
-		Handle:    tpm2.TPMHandle(*persistentHandle),
-		Session:   sess,
+		AuthHandle: &tpm2.AuthHandle{
+			Handle: tpm2.TPMHandle(*persistentHandle),
+			Name:   rpub.Name,
+			Auth:   sess,
+		},
 	}
 
 	keyctx, err := tpmjwt.NewTPMContext(ctx, config)

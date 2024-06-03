@@ -149,12 +149,22 @@ func main() {
 	)
 	log.Printf("     Signing PEM \n%s", string(akPubPEM))
 
+	rpub, err := tpm2.ReadPublic{
+		ObjectHandle: tpm2.TPMHandle(*persistentHandle),
+	}.Execute(rwr)
+	if err != nil {
+		log.Fatalf("Unable to initialize tpmJWT: %v", err)
+	}
+
 	config := &tpmjwt.TPMConfig{
-		TPMDevice:        rwc,
-		Handle:           tpm2.TPMHandle(*persistentHandle),
+		TPMDevice: rwc,
+		AuthHandle: &tpm2.AuthHandle{
+			Handle: tpm2.TPMHandle(*persistentHandle),
+			Name:   rpub.Name,
+			Auth:   tpm2.PasswordAuth(nil),
+		},
 		EncryptionHandle: createEKRsp.ObjectHandle,
 		EncryptionPub:    encryptionPub,
-		//Session:   tpm2.PasswordAuth(nil),
 	}
 
 	keyctx, err := tpmjwt.NewTPMContext(ctx, config)

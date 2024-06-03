@@ -149,8 +149,11 @@ func main() {
 
 	config := &tpmjwt.TPMConfig{
 		TPMDevice: rwc,
-		Handle:    tpm2.TPMHandle(*persistentHandle),
-		Session:   tpm2.PasswordAuth(nil),
+		AuthHandle: &tpm2.AuthHandle{
+			Handle: tpm2.TPMHandle(*persistentHandle),
+			Name:   pub.Name,
+			Auth:   tpm2.PasswordAuth(nil),
+		},
 	}
 
 	keyctx, err := tpmjwt.NewTPMContext(ctx, config)

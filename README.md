@@ -43,12 +43,19 @@ rwc, err := tpm2.OpenTPM(*tpmPath)
 defer rwc.Close()
 rwr := transport.FromReadWriter(rwc)
 
-// get an existing tpm based keys persistent or transient handle
+// get an existing tpm based keys persistent or handle
 // pass that to this library along with any session authorization 
+rpub, err := tpm2.ReadPublic{
+	ObjectHandle: tpm2.TPMHandle(*persistentHandle),
+}.Execute(rwr)
+
 config := &tpmjwt.TPMConfig{
 	TPMDevice: rwc,
-	Handle:    tpm2.TPMHandle(keyHandle),
-	Session:   tpm2.PasswordAuth(nil),
+	AuthHandle: &tpm2.AuthHandle{
+		Handle: tpm2.TPMHandle(*persistentHandle),
+		Name:   rpub.Name,
+		Auth:   tpm2.PasswordAuth(nil),
+	},
 }
 
 keyctx, err := tpmjwt.NewTPMContext(ctx, config)
@@ -225,9 +232,17 @@ If you want to enable [session encryption](https://github.com/salrashid123/tpm2/
 
 	encryptionPub, err := createEKRsp.OutPublic.Contents()
 
+	rpub, err := tpm2.ReadPublic{
+		ObjectHandle: tpm2.TPMHandle(*persistentHandle),
+	}.Execute(rwr)
+
 	config := &tpmjwt.TPMConfig{
-		TPMDevice:        rwc,
-		Handle:           tpm2.TPMHandle(*persistentHandle),
+		TPMDevice: rwc,
+		AuthHandle: &tpm2.AuthHandle{
+			Handle: tpm2.TPMHandle(*persistentHandle),
+			Name:   rpub.Name,
+			Auth:   tpm2.PasswordAuth(nil),
+		},
 		EncryptionHandle: createEKRsp.ObjectHandle,
 		EncryptionPub:    encryptionPub,
 	}
@@ -262,12 +277,21 @@ For example, the following has password policy bound:
 
 ```golang
 	keyPass := []byte("pass2")
+
+	rpub, err := tpm2.ReadPublic{
+		ObjectHandle: tpm2.TPMHandle(*persistentHandle),
+	}.Execute(rwr)
+
 	config := &tpmjwt.TPMConfig{
 		TPMDevice: rwc,
-		Handle:    tpm2.TPMHandle(*persistentHandle),
-		Session:   tpm2.PasswordAuth(keyPass),
+		AuthHandle: &tpm2.AuthHandle{
+			Handle: tpm2.TPMHandle(*persistentHandle),
+			Name:   rpub.Name,
+			Auth:   tpm2.PasswordAuth(keyPass),
+		},
+		EncryptionHandle: createEKRsp.ObjectHandle,
+		EncryptionPub:    encryptionPub,
 	}
-	keyctx, err := tpmjwt.NewTPMContext(ctx, config)
 ```
 
 Which you can initialize though:
@@ -380,7 +404,7 @@ sessionKey, err := client.GceAttestationKeyRSA(rwc)
 If you down't want to run the tests on a real TPM, you can opt to use `swtpm` if its installed:
 
 ```bash
-mkdir /tmp/myvtpm
+rm -rf /tmp/myvtpm && mkdir /tmp/myvtpm
 sudo swtpm socket --tpmstate dir=/tmp/myvtpm --tpm2 --server type=tcp,port=2321 --ctrl type=tcp,port=2322 --flags not-need-init,startup-clear
 
 ## run any TPM command

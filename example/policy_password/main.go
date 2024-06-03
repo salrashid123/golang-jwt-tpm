@@ -138,10 +138,17 @@ func main() {
 	)
 	log.Printf("     Signing PEM \n%s", string(akPubPEM))
 
+	rpub, err := tpm2.ReadPublic{
+		ObjectHandle: tpm2.TPMHandle(*persistentHandle),
+	}.Execute(rwr)
+
 	config := &tpmjwt.TPMConfig{
 		TPMDevice: rwc,
-		Handle:    tpm2.TPMHandle(*persistentHandle),
-		Session:   tpm2.PasswordAuth(keyPass),
+		AuthHandle: &tpm2.AuthHandle{
+			Handle: tpm2.TPMHandle(*persistentHandle),
+			Name:   rpub.Name,
+			Auth:   tpm2.PasswordAuth(keyPass),
+		},
 	}
 
 	keyctx, err := tpmjwt.NewTPMContext(ctx, config)
