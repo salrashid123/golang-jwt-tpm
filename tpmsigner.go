@@ -291,7 +291,7 @@ func (s *SigningMethodTPM) Sign(signingString string, key interface{}) ([]byte, 
 				Validation: tpm2.TPMTTKHashCheck{
 					Tag: tpm2.TPMSTHashCheck,
 				},
-			}.Execute(rwr, tpm2.HMAC(tpm2.TPMAlgSHA256, 16, tpm2.AESEncryption(128, tpm2.EncryptIn)))
+			}.Execute(rwr, sess)
 			if err != nil {
 				return nil, fmt.Errorf("tpmjwt: can't Sign ecc: %v", err)
 			}
