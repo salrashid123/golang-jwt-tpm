@@ -363,7 +363,16 @@ $ go run policy_pcr/main.go --persistentHandle=0x81008003 --tpm-path=/dev/tpm0
 
 For more information, see [TPM2 Policy](https://github.com/salrashid123/tpm2/tree/master/policy)
 
-Note, you can also define your own 
+Note, you can define your own policy for import too...just implement the "session" interface from the signer:
+
+```golang
+type Session interface {
+	io.Closer                                   // read closer to the TPM
+	GetSession() (auth tpm2.Session, err error) // this supplies the session handle to the library
+}
+```
+
+eg: 
 
 ```golang
 // for pcr sessions
