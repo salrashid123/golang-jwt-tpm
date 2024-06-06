@@ -128,39 +128,30 @@ func main() {
 	)
 	log.Printf("     Signing PEM \n%s", string(akPubPEM))
 
-	sess, cleanup, err := tpm2.PolicySession(rwr, tpm2.TPMAlgSHA256, 16)
-	if err != nil {
-		log.Printf("ERROR:  could not get PolicySession: %v", err)
-		return
-	}
-	defer cleanup()
-
-	_, err = tpm2.PolicyPCR{
-		PolicySession: sess.Handle(),
-		Pcrs: tpm2.TPMLPCRSelection{
-			PCRSelections: []tpm2.TPMSPCRSelection{
-				{
-					Hash:      tpm2.TPMAlgSHA256,
-					PCRSelect: tpm2.PCClientCompatible.PCRs(23),
-				},
-			},
-		},
-	}.Execute(rwr)
-	if err != nil {
-		log.Fatalf("Unable to initialize tpmJWT: %v", err)
-	}
-
 	rpub, err := tpm2.ReadPublic{
 		ObjectHandle: tpm2.TPMHandle(*persistentHandle),
 	}.Execute(rwr)
+	if err != nil {
+		log.Fatalf("Error reading public: %v", err)
+	}
+
+	p, err := tpmjwt.NewPCRSession(rwr, []tpm2.TPMSPCRSelection{
+		{
+			Hash:      tpm2.TPMAlgSHA256,
+			PCRSelect: tpm2.PCClientCompatible.PCRs(23),
+		},
+	})
+	if err != nil {
+		log.Fatalf("Error configuring PCR session: %v", err)
+	}
 
 	config := &tpmjwt.TPMConfig{
 		TPMDevice: rwc,
-		AuthHandle: &tpm2.AuthHandle{
+		NamedHandle: tpm2.NamedHandle{
 			Handle: tpm2.TPMHandle(*persistentHandle),
 			Name:   rpub.Name,
-			Auth:   sess,
 		},
+		AuthSession: p,
 	}
 
 	keyctx, err := tpmjwt.NewTPMContext(ctx, config)

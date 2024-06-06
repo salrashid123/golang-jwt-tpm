@@ -158,10 +158,9 @@ func main() {
 
 	config := &tpmjwt.TPMConfig{
 		TPMDevice: rwc,
-		AuthHandle: &tpm2.AuthHandle{
+		NamedHandle: tpm2.NamedHandle{
 			Handle: tpm2.TPMHandle(*persistentHandle),
 			Name:   rpub.Name,
-			Auth:   tpm2.PasswordAuth(nil),
 		},
 		EncryptionHandle: createEKRsp.ObjectHandle,
 		EncryptionPub:    encryptionPub,

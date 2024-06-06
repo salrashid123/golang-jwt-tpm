@@ -24,7 +24,7 @@ import (
 
 var (
 	tpmPath          = flag.String("tpm-path", "127.0.0.1:2321", "Path to the TPM device (character device or a Unix socket).")
-	persistentHandle = flag.Uint("persistentHandle", 0x81008001, "Handle value")
+	persistentHandle = flag.Uint("persistentHandle", 0x81008002, "Handle value")
 )
 
 var TPMDEVICES = []string{"/dev/tpm0", "/dev/tpmrm0"}
@@ -142,13 +142,18 @@ func main() {
 		ObjectHandle: tpm2.TPMHandle(*persistentHandle),
 	}.Execute(rwr)
 
+	p, err := tpmjwt.NewPasswordSession(rwr, []byte(keyPass))
+	if err != nil {
+		log.Printf("ERROR:  could not get MarshalPKIXPublicKey: %v", err)
+		return
+	}
 	config := &tpmjwt.TPMConfig{
 		TPMDevice: rwc,
-		AuthHandle: &tpm2.AuthHandle{
+		NamedHandle: tpm2.NamedHandle{
 			Handle: tpm2.TPMHandle(*persistentHandle),
 			Name:   rpub.Name,
-			Auth:   tpm2.PasswordAuth(keyPass),
 		},
+		AuthSession: p,
 	}
 
 	keyctx, err := tpmjwt.NewTPMContext(ctx, config)

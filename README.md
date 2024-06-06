@@ -275,6 +275,8 @@ If a key is bound to a Password or PCR policy, you can specify that inline durin
 
 For example, the following has password policy bound:
 
+eg, for Password Policy:
+
 ```golang
 	keyPass := []byte("pass2")
 
@@ -282,19 +284,42 @@ For example, the following has password policy bound:
 		ObjectHandle: tpm2.TPMHandle(*persistentHandle),
 	}.Execute(rwr)
 
+	p, err := tpmjwt.NewPasswordSession(rwr, []byte(keyPass))
 	config := &tpmjwt.TPMConfig{
 		TPMDevice: rwc,
-		AuthHandle: &tpm2.AuthHandle{
+		NamedHandle: tpm2.NamedHandle{
 			Handle: tpm2.TPMHandle(*persistentHandle),
 			Name:   rpub.Name,
-			Auth:   tpm2.PasswordAuth(keyPass),
 		},
-		EncryptionHandle: createEKRsp.ObjectHandle,
-		EncryptionPub:    encryptionPub,
+		AuthSession: p,
 	}
 ```
 
-Which you can initialize though:
+For PCR Policy:
+
+```golang
+	rpub, err := tpm2.ReadPublic{
+		ObjectHandle: tpm2.TPMHandle(*persistentHandle),
+	}.Execute(rwr)
+
+	p, err := tpmjwt.NewPCRSession(rwr, []tpm2.TPMSPCRSelection{
+		{
+			Hash:      tpm2.TPMAlgSHA256,
+			PCRSelect: tpm2.PCClientCompatible.PCRs(23),
+		},
+	})
+
+	config := &tpmjwt.TPMConfig{
+		TPMDevice: rwc,
+		NamedHandle: tpm2.NamedHandle{
+			Handle: tpm2.TPMHandle(*persistentHandle),
+			Name:   rpub.Name,
+		},
+		AuthSession: p,
+	}
+```
+
+If you want to set those up using tpm2_tools:
 
 ```bash
 ## RSA - password
@@ -337,6 +362,44 @@ $ go run policy_pcr/main.go --persistentHandle=0x81008003 --tpm-path=/dev/tpm0
 ```
 
 For more information, see [TPM2 Policy](https://github.com/salrashid123/tpm2/tree/master/policy)
+
+Note, you can also define your own 
+
+```golang
+// for pcr sessions
+type MySession struct {
+	rwr transport.TPM
+	sel []tpm2.TPMSPCRSelection
+}
+
+func NewMySession(rwr transport.TPM, sel []tpm2.TPMSPCRSelection) (MySession, error) {
+	return MySession{rwr, sel}, nil
+}
+
+func (p MySession) GetSession() (auth tpm2.Session, err error) {
+	sess, _, err := tpm2.PolicySession(p.rwr, tpm2.TPMAlgSHA256, 16)
+	if err != nil {
+		return nil, err
+	}
+
+	// defineyour poicy here
+	_, err = tpm2.PolicyPCR{
+		PolicySession: sess.Handle(),
+		Pcrs: tpm2.TPMLPCRSelection{
+			PCRSelections: p.sel,
+		},
+	}.Execute(p.rwr)
+	if err != nil {
+		return nil, err
+	}
+	return sess, nil
+}
+
+func (p MySession) Close() error {
+	return nil
+}
+```
+
 
 ### Sign/Verify with GCP builtin AKCert
 

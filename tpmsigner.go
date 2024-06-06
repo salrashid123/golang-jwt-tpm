@@ -22,13 +22,20 @@ import (
 // Much of this implementation is inspired templated form [gcp-jwt-go](https://github.com/someone1/gcp-jwt-go)
 
 type TPMConfig struct {
-	TPMDevice        io.ReadWriteCloser
-	AuthHandle       *tpm2.AuthHandle // load a key from auth handle
+	TPMDevice   io.ReadWriteCloser
+	NamedHandle tpm2.NamedHandle
+	//Name             tpm2.TPM2BName
+	AuthSession      Session          // If the key needs a session, supply one as the `tpmjwt.Session`
 	KeyID            string           // (optional) the TPM keyID (normally the key "Name")
 	publicKeyFromTPM crypto.PublicKey // the public key as read from KeyHandleFile, KeyHandleNV
 	name             tpm2.TPM2BName
 	EncryptionHandle tpm2.TPMHandle   // (optional) handle to use for transit encryption
 	EncryptionPub    *tpm2.TPMTPublic // (optional) public key to use for transit encryption
+}
+
+type Session interface {
+	io.Closer                                   // read closer to the TPM
+	GetSession() (auth tpm2.Session, err error) // this supplies the session handle to the library
 }
 
 type tpmConfigKey struct{}
@@ -56,13 +63,13 @@ type SigningMethodTPM struct {
 
 func NewTPMContext(parent context.Context, val *TPMConfig) (context.Context, error) {
 	// first check if a TPM is even involved in the picture here since we can verify w/o a TPM
-	if val.TPMDevice == nil || val.AuthHandle == nil {
+	if val.TPMDevice == nil || &val.NamedHandle == nil {
 		return nil, fmt.Errorf("tpmjwt: tpm device or key not set")
 	}
 	rwr := transport.FromReadWriter(val.TPMDevice)
 
 	pub, err := tpm2.ReadPublic{
-		ObjectHandle: tpm2.TPMHandle(val.AuthHandle.HandleValue()),
+		ObjectHandle: tpm2.TPMHandle(val.NamedHandle.HandleValue()),
 	}.Execute(rwr)
 	if err != nil {
 		return nil, fmt.Errorf("tpmjwt: error executing tpm2.ReadPublic %v", err)
@@ -208,11 +215,28 @@ func (s *SigningMethodTPM) Sign(signingString string, key interface{}) ([]byte, 
 		sess = tpm2.HMAC(tpm2.TPMAlgSHA256, 16, tpm2.AESEncryption(128, tpm2.EncryptIn))
 	}
 
+	var se tpm2.Session
+	if config.AuthSession != nil {
+		se, err = config.AuthSession.GetSession()
+		if err != nil {
+			return nil, fmt.Errorf("tpmjwt: error getting session %s", s.Alg())
+		}
+		defer func() {
+			_, err = (&tpm2.FlushContext{FlushHandle: se.Handle()}).Execute(rwr)
+		}()
+	} else {
+		se = tpm2.PasswordAuth(nil)
+	}
 	switch pub := config.publicKeyFromTPM.(type) {
 	case *rsa.PublicKey:
 		if s.Alg() == "RS256" {
+
 			rspSign, err := tpm2.Sign{
-				KeyHandle: *config.AuthHandle,
+				KeyHandle: tpm2.AuthHandle{
+					Handle: config.NamedHandle.Handle,
+					Name:   config.NamedHandle.Name,
+					Auth:   se,
+				},
 				Digest: tpm2.TPM2BDigest{
 					Buffer: digest[:],
 				},
@@ -241,7 +265,11 @@ func (s *SigningMethodTPM) Sign(signingString string, key interface{}) ([]byte, 
 
 		} else if s.Alg() == "PS256" {
 			rspSign, err := tpm2.Sign{
-				KeyHandle: *config.AuthHandle,
+				KeyHandle: tpm2.AuthHandle{
+					Handle: config.NamedHandle.Handle,
+					Name:   config.NamedHandle.Name,
+					Auth:   se,
+				},
 				Digest: tpm2.TPM2BDigest{
 					Buffer: digest[:],
 				},
@@ -275,7 +303,11 @@ func (s *SigningMethodTPM) Sign(signingString string, key interface{}) ([]byte, 
 	case *ecdsa.PublicKey:
 		if s.Alg() == "ES256" {
 			rspSign, err := tpm2.Sign{
-				KeyHandle: *config.AuthHandle,
+				KeyHandle: tpm2.AuthHandle{
+					Handle: config.NamedHandle.Handle,
+					Name:   config.NamedHandle.Name,
+					Auth:   se,
+				},
 				Digest: tpm2.TPM2BDigest{
 					Buffer: digest[:],
 				},
@@ -321,4 +353,53 @@ func TPMVerfiyKeyfunc(ctx context.Context, config *TPMConfig) (jwt.Keyfunc, erro
 
 func (s *SigningMethodTPM) Verify(signingString string, signature []byte, key interface{}) error {
 	return s.override.Verify(signingString, []byte(signature), key)
+}
+
+// for pcr sessions
+type PCRSession struct {
+	rwr transport.TPM
+	sel []tpm2.TPMSPCRSelection
+}
+
+func NewPCRSession(rwr transport.TPM, sel []tpm2.TPMSPCRSelection) (PCRSession, error) {
+	return PCRSession{rwr, sel}, nil
+}
+
+func (p PCRSession) GetSession() (auth tpm2.Session, err error) {
+	sess, _, err := tpm2.PolicySession(p.rwr, tpm2.TPMAlgSHA256, 16)
+	if err != nil {
+		return nil, err
+	}
+	_, err = tpm2.PolicyPCR{
+		PolicySession: sess.Handle(),
+		Pcrs: tpm2.TPMLPCRSelection{
+			PCRSelections: p.sel,
+		},
+	}.Execute(p.rwr)
+	if err != nil {
+		return nil, err
+	}
+	return sess, nil
+}
+
+func (p PCRSession) Close() error {
+	return nil
+}
+
+// for password sessions
+type PasswordSession struct {
+	rwr      transport.TPM
+	password []byte
+}
+
+func NewPasswordSession(rwr transport.TPM, password []byte) (PasswordSession, error) {
+	return PasswordSession{rwr, password}, nil
+}
+
+func (p PasswordSession) GetSession() (auth tpm2.Session, err error) {
+	return tpm2.PasswordAuth(p.password), nil
+}
+
+func (p PasswordSession) Close() error {
+	return nil
 }

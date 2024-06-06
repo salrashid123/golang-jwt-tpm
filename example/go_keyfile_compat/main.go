@@ -307,10 +307,9 @@ func main() {
 
 	config := &tpmjwt.TPMConfig{
 		TPMDevice: rwc,
-		AuthHandle: &tpm2.AuthHandle{
+		NamedHandle: tpm2.NamedHandle{
 			Handle: regenRSAKey.ObjectHandle,
 			Name:   rpub.Name,
-			Auth:   tpm2.PasswordAuth(nil),
 		},
 	}
 
