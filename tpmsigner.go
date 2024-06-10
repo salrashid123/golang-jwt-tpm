@@ -33,11 +33,6 @@ type TPMConfig struct {
 	EncryptionPub    *tpm2.TPMTPublic // (optional) public key to use for transit encryption
 }
 
-type Session interface {
-	io.Closer                                   // read closer to the TPM
-	GetSession() (auth tpm2.Session, err error) // this supplies the session handle to the library
-}
-
 type tpmConfigKey struct{}
 
 func (k *TPMConfig) GetKeyID() string {
@@ -353,6 +348,11 @@ func TPMVerfiyKeyfunc(ctx context.Context, config *TPMConfig) (jwt.Keyfunc, erro
 
 func (s *SigningMethodTPM) Verify(signingString string, signature []byte, key interface{}) error {
 	return s.override.Verify(signingString, []byte(signature), key)
+}
+
+type Session interface {
+	io.Closer                                   // read closer to the TPM
+	GetSession() (auth tpm2.Session, err error) // this supplies the session handle to the library
 }
 
 // for pcr sessions

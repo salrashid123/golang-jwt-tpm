@@ -22,11 +22,14 @@ The following types are supported
 * `PS256`
 * `ES256`
 
-against the TPM `OWNER` hierarchy
 
 ### Usage
 
-Use this library to issue JWTs in a way compatible with golang-jwt library.  The difference is that the caller must initialize a low-level [go-tpm/tpm2.TPMHandle][https://pkg.go.dev/github.com/google/go-tpm@v0.9.0/tpm2#TPMHandle] object from [go-tpm](https://github.com/google/go-tpm) and pass that through with any optional authorized session:
+You need to first have an RSA or ECC key saved to a TPM and then specify its [go-tpm/tpm2.TPMHandle](https://pkg.go.dev/github.com/google/go-tpm@v0.9.0/tpm2#TPMHandle) with this library.
+
+In the following, the Key is referenced as a [persistent or transient handle](https://trustedcomputinggroup.org/wp-content/uploads/RegistryOfReservedTPM2HandlesAndLocalities_v1p1_pub.pdf).  Embedding a key to a TPM is out of scope of this repo but you can use [tpm2_tools](https://github.com/tpm2-software/tpm2-tools) as shown in the examples folder.
+
+Once the key is on a TPM (in this case, at handle `0x81008001`), usage is similar to:
 
 ```golang
 import (
@@ -39,22 +42,21 @@ import (
 )
 
 // initialize the TPM
-rwc, err := tpm2.OpenTPM(*tpmPath)
+rwc, err := tpm2.OpenTPM("/dev/tpmrm0")
 defer rwc.Close()
 rwr := transport.FromReadWriter(rwc)
 
 // get an existing tpm based keys persistent or handle
 // pass that to this library along with any session authorization 
 rpub, err := tpm2.ReadPublic{
-	ObjectHandle: tpm2.TPMHandle(*persistentHandle),
+	ObjectHandle: tpm2.TPMHandle(0x81008001),
 }.Execute(rwr)
 
 config := &tpmjwt.TPMConfig{
 	TPMDevice: rwc,
-	AuthHandle: &tpm2.AuthHandle{
-		Handle: tpm2.TPMHandle(*persistentHandle),
+	NamedHandle: tpm2.NamedHandle{
+		Handle: tpm2.TPMHandle(0x81008001),
 		Name:   rpub.Name,
-		Auth:   tpm2.PasswordAuth(nil),
 	},
 }
 
@@ -74,54 +76,7 @@ fmt.Printf("TOKEN: %s\n", tokenString)
 
 ### Setup
 
-To use this library, you need a TPM to issue a JWT. You do not need a TPM to verify; you just need the public key.  On linux, its usually at `/dev/tpm0`
-
-The sample setup uses a [GCP Shielded VM](https://cloud.google.com/security/shielded-cloud/shielded-vm).  You can use any system that has a TPM (including a raspberryPi with a fancy extra on chip)
-
-Setup 
-
-```bash
-gcloud compute  instances create   tpm-device     \
-   --zone=us-central1-a --machine-type=n1-standard-1 \
-   --tags tpm       --no-service-account  --no-scopes  \
-   --shielded-secure-boot --shielded-vtpm --shielded-integrity-monitoring  \
-   --image-family=debian-11 --image-project=debian-cloud
-
-# ssh to VM, install tpm2_tools from source
-sudo su -
-apt-get update
-
-apt -y install   autoconf-archive   libcmocka0   libcmocka-dev   procps  \
-   iproute2   build-essential   git   pkg-config   gcc   libtool   automake \
-     libssl-dev   uthash-dev   autoconf   doxygen  libcurl4-openssl-dev dbus-x11 libglib2.0-dev libjson-c-dev acl
-
-cd
-git clone https://github.com/tpm2-software/tpm2-tss.git
-  cd tpm2-tss
-  ./bootstrap
-  ./configure --with-udevrulesdir=/etc/udev/rules.d
-  make -j$(nproc)
-  make install
-  udevadm control --reload-rules && sudo udevadm trigger
-  ldconfig
-
-cd
-git clone https://github.com/tpm2-software/tpm2-tools.git
-  cd tpm2-tools
-  ./bootstrap
-  ./configure
-  make check
-  make install
-
-
-wget https://go.dev/dl/go1.22.2.linux-amd64.tar.gz
-rm -rf /usr/local/go && tar -C /usr/local -xzf go1.22.2.linux-amd64.tar.gz
-export PATH=$PATH:/usr/local/go/bin
-```
-
-Once on the VM, create a key on TPM (if you already have an existing key on TPM, you can acquire a handle and pass that to the library). 
-
-### Usage
+To use this library, you need a TPM to issue a JWT (you do not need a TPM to verify; you just need the public key).
 
 For simplicity, the following generates and embeds keys into a persistent handle using [tpm2_tools](https://github.com/tpm2-software/tpm2-tools).  (You are free to use any system to provision a key)
 
@@ -238,10 +193,9 @@ If you want to enable [session encryption](https://github.com/salrashid123/tpm2/
 
 	config := &tpmjwt.TPMConfig{
 		TPMDevice: rwc,
-		AuthHandle: &tpm2.AuthHandle{
-			Handle: tpm2.TPMHandle(*persistentHandle),
+		NamedHandle: tpm2.NamedHandle{
+			Handle: tpm2.TPMHandle(0x81008001),
 			Name:   rpub.Name,
-			Auth:   tpm2.PasswordAuth(nil),
 		},
 		EncryptionHandle: createEKRsp.ObjectHandle,
 		EncryptionPub:    encryptionPub,
@@ -407,68 +361,6 @@ func (p MySession) GetSession() (auth tpm2.Session, err error) {
 func (p MySession) Close() error {
 	return nil
 }
-```
-
-
-### Sign/Verify with GCP builtin AKCert
-
-vTPMs usually have an EK certificate and template encoded into NV area here described from pg 13 of [TCG EK Credential Profile](https://trustedcomputinggroup.org/wp-content/uploads/TCG_IWG_EKCredentialProfile_v2p4_r3.pdf)
-
-```
-2.2.1.4 Low Range
-The Low Range is at NV Indices 0x01c00002 - 0x01c0000c.
-0x01c00002 RSA 2048 EK Certificate
-0x01c00003 RSA 2048 EK Nonce
-0x01c00004 RSA 2048 EK Template
-0x01c0000a ECC NIST P256 EK Certificate
-0x01c0000b ECC NIST P256 EK Nonce
-0x01c0000c ECC NIST P256 EK Template
-```
-
-To see this and read the EKCertificate, 
-
-```bash
-export TPM2_EK_NV_INDEX=0x1c00002
-tpm2_nvreadpublic | sed -n -e "/""$TPM2_EK_NV_INDEX""/,\$p" | sed -e '/^[ \r\n\t]*$/,$d' | grep "size" | sed 's/.*size.*://' | sed -e 's/^[[:space:]]*//' | sed -e 's/[[:space:]]$//'
-## note the 1422 is just the size i saw on NV for the cert, yours will be different
-tpm2_nvread -s 1422  -C o $TPM2_EK_NV_INDEX |  openssl x509 --inform DER -text -noout  -in -
-```
-
-Note GCE VMs encodes a default the Attestation Certificate into NV area here:
-
-```golang
-	// RSA 2048 AK.
-	GceAKCertNVIndexRSA     uint32 = 0x01c10000
-	GceAKTemplateNVIndexRSA uint32 = 0x01c10001
-```
-
-which you can read in directly:
-
-```bash
-$ tpm2_nvreadpublic 
-
-0x1c10000:
-  name: 000bc1dcc77bde4982d4817bcbe8418d49c1f24e3a017e79e1be9d25f6bc50c0f7c2
-  hash algorithm:
-    friendly: sha256
-    value: 0xB
-  attributes:
-    friendly: ppwrite|writedefine|ppread|ownerread|authread|no_da|written|platformcreate
-    value: 0x62072001
-  size: 1516
-
-
-export GceAKCertNVIndexRSA=0x01c10000
-## >>>note the size for me was 1516
-tpm2_nvread -s 1516  -C o $GceAKCertNVIndexRSA |  openssl x509 --inform DER -text -noout  -in -
-```
-
-To sign with the attestation key (which is available remotely via GCE APIs and even signed by GCE), just a handle...eg using go-tpm-tools client:
-
-```golang
-// attestation key that is signed by GCE
-sessionKey, err := client.GceAttestationKeyRSA(rwc)
-//sessionKey, err := client.AttestationKeyRSA(rwc)
 ```
 
 ### Usign Simulator
