@@ -321,8 +321,7 @@ Note, you can define your own policy for import too...just implement the "sessio
 
 ```golang
 type Session interface {
-	io.Closer                                   // read closer to the TPM
-	GetSession() (auth tpm2.Session, err error) // this supplies the session handle to the library
+	GetSession() (auth tpm2.Session, closer func() error, err error) // this supplies the session handle to the library
 }
 ```
 
@@ -330,22 +329,24 @@ eg:
 
 ```golang
 // for pcr sessions
-type MySession struct {
+type MyCustomSession struct {
 	rwr transport.TPM
 	sel []tpm2.TPMSPCRSelection
 }
 
-func NewMySession(rwr transport.TPM, sel []tpm2.TPMSPCRSelection) (MySession, error) {
-	return MySession{rwr, sel}, nil
+func NewMyCustomSession(rwr transport.TPM, sel []tpm2.TPMSPCRSelection) (MyCustomSession, error) {
+	return MyCustomSession{rwr, sel}, nil
 }
 
-func (p MySession) GetSession() (auth tpm2.Session, err error) {
-	sess, _, err := tpm2.PolicySession(p.rwr, tpm2.TPMAlgSHA256, 16)
+func (p MyCustomSession) GetSession() (auth tpm2.Session, closer func() error, err error) {
+
+	sess, closer, err := tpm2.PolicySession(p.rwr, tpm2.TPMAlgSHA256, 16)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
-	// defineyour poicy here
+	// implement whatever you want here, i'm just using policypcr
+
 	_, err = tpm2.PolicyPCR{
 		PolicySession: sess.Handle(),
 		Pcrs: tpm2.TPMLPCRSelection{
@@ -353,13 +354,9 @@ func (p MySession) GetSession() (auth tpm2.Session, err error) {
 		},
 	}.Execute(p.rwr)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	return sess, nil
-}
-
-func (p MySession) Close() error {
-	return nil
+	return sess, closer, nil
 }
 ```
 

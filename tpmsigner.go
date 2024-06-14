@@ -212,13 +212,12 @@ func (s *SigningMethodTPM) Sign(signingString string, key interface{}) ([]byte, 
 
 	var se tpm2.Session
 	if config.AuthSession != nil {
-		se, err = config.AuthSession.GetSession()
+		var closer func() error
+		se, closer, err = config.AuthSession.GetSession()
 		if err != nil {
 			return nil, fmt.Errorf("tpmjwt: error getting session %s", s.Alg())
 		}
-		defer func() {
-			_, err = (&tpm2.FlushContext{FlushHandle: se.Handle()}).Execute(rwr)
-		}()
+		defer closer()
 	} else {
 		se = tpm2.PasswordAuth(nil)
 	}
@@ -351,8 +350,7 @@ func (s *SigningMethodTPM) Verify(signingString string, signature []byte, key in
 }
 
 type Session interface {
-	io.Closer                                   // read closer to the TPM
-	GetSession() (auth tpm2.Session, err error) // this supplies the session handle to the library
+	GetSession() (auth tpm2.Session, closer func() error, err error) // this supplies the session handle to the library
 }
 
 // for pcr sessions
@@ -365,10 +363,10 @@ func NewPCRSession(rwr transport.TPM, sel []tpm2.TPMSPCRSelection) (PCRSession, 
 	return PCRSession{rwr, sel}, nil
 }
 
-func (p PCRSession) GetSession() (auth tpm2.Session, err error) {
-	sess, _, err := tpm2.PolicySession(p.rwr, tpm2.TPMAlgSHA256, 16)
+func (p PCRSession) GetSession() (auth tpm2.Session, closer func() error, err error) {
+	sess, closer, err := tpm2.PolicySession(p.rwr, tpm2.TPMAlgSHA256, 16)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	_, err = tpm2.PolicyPCR{
 		PolicySession: sess.Handle(),
@@ -377,13 +375,9 @@ func (p PCRSession) GetSession() (auth tpm2.Session, err error) {
 		},
 	}.Execute(p.rwr)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	return sess, nil
-}
-
-func (p PCRSession) Close() error {
-	return nil
+	return sess, closer, nil
 }
 
 // for password sessions
@@ -396,10 +390,7 @@ func NewPasswordSession(rwr transport.TPM, password []byte) (PasswordSession, er
 	return PasswordSession{rwr, password}, nil
 }
 
-func (p PasswordSession) GetSession() (auth tpm2.Session, err error) {
-	return tpm2.PasswordAuth(p.password), nil
-}
-
-func (p PasswordSession) Close() error {
-	return nil
+func (p PasswordSession) GetSession() (auth tpm2.Session, closer func() error, err error) {
+	c := func() error { return nil }
+	return tpm2.PasswordAuth(p.password), c, nil
 }
