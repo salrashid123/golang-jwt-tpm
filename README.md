@@ -367,6 +367,26 @@ func (p MyPCRAndPolicyAuthValueSession) GetSession() (auth tpm2.Session, closer 
 }
 ```
 
+which you can call as:
+
+```golang
+	se, err := NewPCRAndPolicyAuthValueSession(rwr, []tpm2.TPMSPCRSelection{
+		{
+			Hash:      tpm2.TPMAlgSHA256,
+			PCRSelect: tpm2.PCClientCompatible.PCRs(uint(*pcr)),
+		},
+	}, []byte("testpswd"))
+
+	rr, err := saltpm.NewTPMCrypto(&saltpm.TPM{
+		TpmDevice: rwc,
+		NamedHandle: &tpm2.NamedHandle{
+			Handle: tpm2.TPMHandle(*handle),
+			Name:   pub.Name,
+		},
+		AuthSession: se,
+	})
+```
+
 ### Usign Simulator
 
 If you down't want to run the tests on a real TPM, you can opt to use `swtpm` if its installed:
