@@ -10,7 +10,7 @@ require (
 )
 
 require (
-	github.com/foxboron/go-tpm-keyfiles v0.0.0-20240525122353-0883da4eb332
+	github.com/foxboron/go-tpm-keyfiles v0.0.0-20240620184055-b891af1cbc88
 	github.com/golang-jwt/jwt/v5 v5.2.1
 	github.com/salrashid123/golang-jwt-tpm v1.5.0
 )
@@ -26,7 +26,7 @@ require (
 	github.com/pkg/errors v0.9.1 // indirect
 	go.uber.org/multierr v1.11.0 // indirect
 	golang.org/x/crypto v0.23.0 // indirect
-	golang.org/x/sys v0.20.0 // indirect
+	golang.org/x/sys v0.21.0 // indirect
 	google.golang.org/protobuf v1.34.1 // indirect
 )
 

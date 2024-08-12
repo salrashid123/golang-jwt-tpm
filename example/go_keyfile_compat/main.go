@@ -28,10 +28,6 @@ import (
 /*
 Load a key using https://github.com/Foxboron/go-tpm-keyfiles
 
-also see:
-
-	https://gist.github.com/salrashid123/9822b151ebb66f4083c5f71fd4cdbe40
-
 $ go run go_keyfile_compat/main.go
 
 2024/05/30 11:20:36 ======= Init  ========
@@ -69,6 +65,12 @@ dwIDAQAB
 TOKEN: eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJ0ZXN0IiwiZXhwIjoxNzE3MDgyNDk2fQ.Gyb8YIeQsbbl5mFVn55dO-J26HuwM1JK94RdrOEafySI7YJzfOkSeSAaSHvNR9aPiHh--nx3oMYpxPwPR161mKBF-w9DETqHn6lUqFSYzEk7tut-E1LrohrACkhSS_VbJuUw9S57imYMqzI9BTKm-FFG1mYBktWI0UWxC7e5wGaajS_cJc7fRx-5Ni-lDyBxYL1Az1ApIg9bwkEJxG7fLSI2_nsO9Unzd1mpRZ2nBUMjaK2aoG8vZMhHOK80R46VEeBq1ZT2xoaXiNZshBRf2mIptLpfSNVjT1gDCWdKVtIaBHevTpzmQLflQJVdSNKinCst-7N_QzF2UEPRBGx7GQ
 2024/05/30 11:20:36      verified with TPM PublicKey
 2024/05/30 11:20:36      verified with exported PubicKey
+
+// note the primary is created using the h2 template
+//   printf '\x00\x00' > /tmp/unique.dat
+//   tpm2_createprimary -C o -G ecc  -g sha256 \
+//       -c primary.ctx \
+//       -a "fixedtpm|fixedparent|sensitivedataorigin|userwithauth|noda|restricted|decrypt" -u /tmp/unique.dat
 */
 var (
 	tpmPath = flag.String("tpm-path", "127.0.0.1:2321", "Path to the TPM device (character device or a Unix socket).")
@@ -109,8 +111,11 @@ func main() {
 	log.Printf("======= createPrimary ========")
 
 	primaryKey, err := tpm2.CreatePrimary{
-		PrimaryHandle: tpm2.TPMRHOwner,
-		InPublic:      tpm2.New2B(tpm2.RSASRKTemplate),
+		PrimaryHandle: tpm2.AuthHandle{
+			Handle: tpm2.TPMRHOwner,
+			Auth:   tpm2.PasswordAuth(nil),
+		},
+		InPublic: tpm2.New2B(keyfile.ECCSRK_H2_Template),
 	}.Execute(rwr)
 	if err != nil {
 		log.Fatalf("can't create primary %v", err)
@@ -173,13 +178,23 @@ func main() {
 		log.Fatalf("can't create rsa %v", err)
 	}
 
+	defer func() {
+		flushContextCmd := tpm2.FlushContext{
+			FlushHandle: rsaKeyResponse.ObjectHandle,
+		}
+		_, _ = flushContextCmd.Execute(rwr)
+	}()
+
 	// write the key to file
 	log.Printf("======= writing key to file ========")
 
-	//tkf, err := keyfile.NewLoadableKey(rsaKeyResponse.OutPublic, rsaKeyResponse.OutPrivate, tpm2.TPMHandle(*persistenthandle), false)
-	tkf, err := keyfile.NewLoadableKey(rsaKeyResponse.OutPublic, rsaKeyResponse.OutPrivate, primaryKey.ObjectHandle, false)
-	if err != nil {
-		log.Fatalf("failed to create KeyFile: %v", err)
+	tkf := &keyfile.TPMKey{
+		Keytype:    keyfile.OIDLoadableKey,
+		EmptyAuth:  true,
+		AuthPolicy: []*keyfile.TPMAuthPolicy{},
+		Parent:     tpm2.TPMRHOwner,
+		Pubkey:     rsaKeyResponse.OutPublic,
+		Privkey:    rsaKeyResponse.OutPrivate,
 	}
 
 	b := new(bytes.Buffer)
@@ -196,6 +211,16 @@ func main() {
 		log.Fatalf("failed to write private key to file %v", err)
 	}
 
+	flushContextRSACmd := tpm2.FlushContext{
+		FlushHandle: rsaKeyResponse.ObjectHandle,
+	}
+	_, _ = flushContextRSACmd.Execute(rwr)
+
+	flushContextPrimaryCmd := tpm2.FlushContext{
+		FlushHandle: primaryKey.ObjectHandle,
+	}
+	_, _ = flushContextPrimaryCmd.Execute(rwr)
+
 	log.Printf("======= reading key from file ========")
 	c, err := os.ReadFile(*out)
 	if err != nil {
@@ -206,10 +231,28 @@ func main() {
 		log.Fatalf("failed decoding key: %v", err)
 	}
 
+	primary, err := tpm2.CreatePrimary{
+		PrimaryHandle: tpm2.AuthHandle{
+			Handle: tpm2.TPMHandle(key.Parent),
+			Auth:   tpm2.PasswordAuth(nil),
+		},
+		InPublic: tpm2.New2B(keyfile.ECCSRK_H2_Template),
+	}.Execute(rwr)
+	if err != nil {
+		log.Fatalf(" can't create primary: %v", err)
+	}
+
+	defer func() {
+		flushContextCmd := tpm2.FlushContext{
+			FlushHandle: primary.ObjectHandle,
+		}
+		_, _ = flushContextCmd.Execute(rwr)
+	}()
+
 	regenRSAKey, err := tpm2.Load{
 		ParentHandle: tpm2.AuthHandle{
-			Handle: primaryKey.ObjectHandle,
-			Name:   tpm2.TPM2BName(primaryKey.Name),
+			Handle: primary.ObjectHandle,
+			Name:   tpm2.TPM2BName(primary.Name),
 			Auth:   tpm2.PasswordAuth(nil),
 		},
 		InPublic:  key.Pubkey,
@@ -217,14 +260,6 @@ func main() {
 	}.Execute(rwr)
 	if err != nil {
 		log.Fatalf("can't load rsa key: %v", err)
-	}
-
-	flush := tpm2.FlushContext{
-		FlushHandle: primaryKey.ObjectHandle,
-	}
-	_, err = flush.Execute(rwr)
-	if err != nil {
-		log.Fatalf("can't close primary  %v", err)
 	}
 
 	defer func() {
