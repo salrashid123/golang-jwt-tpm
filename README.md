@@ -332,6 +332,8 @@ type MyPCRAndPolicyAuthValueSession struct {
 	password []byte
 }
 
+var _ Session = (*MyPCRAndPolicyAuthValueSession)(nil)
+
 func NewPCRAndPolicyAuthValueSession(rwr transport.TPM, sel []tpm2.TPMSPCRSelection, password []byte) (MyPCRAndPolicyAuthValueSession, error) {
 	return MyPCRAndPolicyAuthValueSession{rwr, sel, password}, nil
 }

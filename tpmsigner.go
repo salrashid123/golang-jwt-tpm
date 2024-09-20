@@ -359,6 +359,8 @@ type PCRSession struct {
 	sel []tpm2.TPMSPCRSelection
 }
 
+var _ Session = (*PCRSession)(nil)
+
 func NewPCRSession(rwr transport.TPM, sel []tpm2.TPMSPCRSelection) (PCRSession, error) {
 	return PCRSession{rwr, sel}, nil
 }
@@ -385,6 +387,8 @@ type PasswordSession struct {
 	rwr      transport.TPM
 	password []byte
 }
+
+var _ Session = (*PasswordSession)(nil)
 
 func NewPasswordSession(rwr transport.TPM, password []byte) (PasswordSession, error) {
 	return PasswordSession{rwr, password}, nil
