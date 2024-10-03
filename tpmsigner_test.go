@@ -218,6 +218,118 @@ func TestTPMRSA(t *testing.T) {
 	require.True(t, vtoken.Valid)
 }
 
+func TestTPMRSAAK(t *testing.T) {
+	tpmDevice, err := simulator.Get()
+	require.NoError(t, err)
+	defer tpmDevice.Close()
+
+	rwr := transport.FromReadWriter(tpmDevice)
+	primaryKey, err := tpm2.CreatePrimary{
+		PrimaryHandle: tpm2.TPMRHEndorsement,
+		InPublic:      tpm2.New2B(tpm2.RSAEKTemplate),
+	}.Execute(rwr)
+	require.NoError(t, err)
+	defer func() {
+		flushContextCmd := tpm2.FlushContext{
+			FlushHandle: primaryKey.ObjectHandle,
+		}
+		_, _ = flushContextCmd.Execute(rwr)
+	}()
+
+	sess, cleanup1, err := tpm2.PolicySession(rwr, tpm2.TPMAlgSHA256, 16)
+	require.NoError(t, err)
+	defer cleanup1()
+
+	_, err = tpm2.PolicySecret{
+		AuthHandle:    tpm2.TPMRHEndorsement,
+		NonceTPM:      sess.NonceTPM(),
+		PolicySession: sess.Handle(),
+	}.Execute(rwr)
+	require.NoError(t, err)
+
+	rt := tpm2.TPMTPublic{
+		Type:    tpm2.TPMAlgRSA,
+		NameAlg: tpm2.TPMAlgSHA256,
+		ObjectAttributes: tpm2.TPMAObject{
+			FixedTPM:            true,
+			FixedParent:         true,
+			SensitiveDataOrigin: true,
+			UserWithAuth:        true,
+			Restricted:          true,
+			SignEncrypt:         true,
+			NoDA:                true,
+		},
+		Parameters: tpm2.NewTPMUPublicParms(
+			tpm2.TPMAlgRSA,
+			&tpm2.TPMSRSAParms{
+				Scheme: tpm2.TPMTRSAScheme{
+					Scheme: tpm2.TPMAlgRSASSA,
+					Details: tpm2.NewTPMUAsymScheme(
+						tpm2.TPMAlgRSASSA,
+						&tpm2.TPMSSigSchemeRSASSA{
+							HashAlg: tpm2.TPMAlgSHA256,
+						},
+					),
+				},
+				KeyBits: 2048,
+			},
+		),
+	}
+
+	rsaKeyResponse, err := tpm2.CreateLoaded{
+		ParentHandle: tpm2.AuthHandle{
+			Handle: primaryKey.ObjectHandle,
+			Name:   primaryKey.Name,
+			Auth:   sess,
+		},
+		InPublic: tpm2.New2BTemplate(&rt),
+	}.Execute(rwr)
+	require.NoError(t, err)
+
+	defer func() {
+		flushContextCmd := tpm2.FlushContext{
+			FlushHandle: rsaKeyResponse.ObjectHandle,
+		}
+		_, _ = flushContextCmd.Execute(rwr)
+	}()
+
+	SigningMethodTPMRS256.Override()
+
+	issuer := "test"
+	claims := &jwt.RegisteredClaims{
+		ExpiresAt: &jwt.NumericDate{time.Now().Add(time.Minute * 1)},
+		Issuer:    issuer,
+	}
+	token := jwt.NewWithClaims(SigningMethodTPMRS256, claims)
+
+	pub, err := tpm2.ReadPublic{
+		ObjectHandle: rsaKeyResponse.ObjectHandle,
+	}.Execute(rwr)
+	require.NoError(t, err)
+
+	config := &TPMConfig{
+		TPMDevice: tpmDevice,
+		NamedHandle: tpm2.NamedHandle{
+			Handle: rsaKeyResponse.ObjectHandle,
+			Name:   pub.Name,
+		},
+	}
+	keyctx, err := NewTPMContext(context.Background(), config)
+	require.NoError(t, err)
+
+	tokenString, err := token.SignedString(keyctx)
+	require.NoError(t, err)
+
+	// verify with TPM based publicKey
+	keyFunc, err := TPMVerfiyKeyfunc(context.Background(), config)
+	require.NoError(t, err)
+
+	vtoken, err := jwt.Parse(tokenString, keyFunc)
+	require.NoError(t, err)
+
+	require.True(t, vtoken.Valid)
+}
+
 func TestTPMRSAFail(t *testing.T) {
 	tpmDevice, err := simulator.Get()
 	require.NoError(t, err)

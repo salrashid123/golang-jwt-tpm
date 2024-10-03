@@ -193,13 +193,6 @@ func (s *SigningMethodTPM) Sign(signingString string, key interface{}) ([]byte, 
 	}
 	var tsig []byte
 
-	h := s.hasher.New()
-	_, err := h.Write([]byte(signingString))
-	if !ok {
-		return nil, err
-	}
-	digest := h.Sum(nil)
-
 	rwr := transport.FromReadWriter(config.TPMDevice)
 
 	var sess tpm2.Session
@@ -208,6 +201,17 @@ func (s *SigningMethodTPM) Sign(signingString string, key interface{}) ([]byte, 
 		sess = tpm2.HMAC(tpm2.TPMAlgSHA256, 16, tpm2.AESEncryption(128, tpm2.EncryptIn), tpm2.Salted(config.EncryptionHandle, *config.EncryptionPub))
 	} else {
 		sess = tpm2.HMAC(tpm2.TPMAlgSHA256, 16, tpm2.AESEncryption(128, tpm2.EncryptIn))
+	}
+
+	h, err := tpm2.Hash{
+		Hierarchy: tpm2.TPMRHEndorsement,
+		HashAlg:   tpm2.TPMAlgSHA256,
+		Data: tpm2.TPM2BMaxBuffer{
+			Buffer: []byte(signingString),
+		},
+	}.Execute(rwr, sess)
+	if err != nil {
+		log.Fatalf("Failed to Sign: %v", err)
 	}
 
 	var se tpm2.Session
@@ -232,7 +236,7 @@ func (s *SigningMethodTPM) Sign(signingString string, key interface{}) ([]byte, 
 					Auth:   se,
 				},
 				Digest: tpm2.TPM2BDigest{
-					Buffer: digest[:],
+					Buffer: h.OutHash.Buffer,
 				},
 				InScheme: tpm2.TPMTSigScheme{
 					Scheme: tpm2.TPMAlgRSASSA,
@@ -244,7 +248,11 @@ func (s *SigningMethodTPM) Sign(signingString string, key interface{}) ([]byte, 
 					),
 				},
 				Validation: tpm2.TPMTTKHashCheck{
-					Tag: tpm2.TPMSTHashCheck,
+					Tag:       tpm2.TPMSTHashCheck,
+					Hierarchy: tpm2.TPMRHEndorsement,
+					Digest: tpm2.TPM2BDigest{
+						Buffer: h.Validation.Digest.Buffer,
+					},
 				},
 			}.Execute(rwr, sess)
 			if err != nil {
@@ -265,7 +273,7 @@ func (s *SigningMethodTPM) Sign(signingString string, key interface{}) ([]byte, 
 					Auth:   se,
 				},
 				Digest: tpm2.TPM2BDigest{
-					Buffer: digest[:],
+					Buffer: h.OutHash.Buffer,
 				},
 				InScheme: tpm2.TPMTSigScheme{
 					Scheme: tpm2.TPMAlgRSAPSS,
@@ -277,7 +285,11 @@ func (s *SigningMethodTPM) Sign(signingString string, key interface{}) ([]byte, 
 					),
 				},
 				Validation: tpm2.TPMTTKHashCheck{
-					Tag: tpm2.TPMSTHashCheck,
+					Tag:       tpm2.TPMSTHashCheck,
+					Hierarchy: tpm2.TPMRHEndorsement,
+					Digest: tpm2.TPM2BDigest{
+						Buffer: h.Validation.Digest.Buffer,
+					},
 				},
 			}.Execute(rwr, sess)
 			if err != nil {
@@ -303,7 +315,7 @@ func (s *SigningMethodTPM) Sign(signingString string, key interface{}) ([]byte, 
 					Auth:   se,
 				},
 				Digest: tpm2.TPM2BDigest{
-					Buffer: digest[:],
+					Buffer: h.OutHash.Buffer,
 				},
 				InScheme: tpm2.TPMTSigScheme{
 					Scheme: tpm2.TPMAlgECDSA,
@@ -315,7 +327,11 @@ func (s *SigningMethodTPM) Sign(signingString string, key interface{}) ([]byte, 
 					),
 				},
 				Validation: tpm2.TPMTTKHashCheck{
-					Tag: tpm2.TPMSTHashCheck,
+					Tag:       tpm2.TPMSTHashCheck,
+					Hierarchy: tpm2.TPMRHEndorsement,
+					Digest: tpm2.TPM2BDigest{
+						Buffer: h.Validation.Digest.Buffer,
+					},
 				},
 			}.Execute(rwr, sess)
 			if err != nil {
