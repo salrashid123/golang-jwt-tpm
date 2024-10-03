@@ -8,7 +8,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log"
 	"math/big"
 
 	jwt "github.com/golang-jwt/jwt/v5"
@@ -92,7 +91,7 @@ func NewTPMContext(parent context.Context, val *TPMConfig) (context.Context, err
 
 		rsaPub, err := tpm2.RSAPub(rsaDetail, rsaUnique)
 		if err != nil {
-			log.Fatalf("Failed to get rsa public key: %v", err)
+			return nil, fmt.Errorf("tpmjwt: Failed to get rsa public key: %v", err)
 		}
 		keyPub = rsaPub
 	case tpm2.TPMAlgECC:
@@ -211,7 +210,7 @@ func (s *SigningMethodTPM) Sign(signingString string, key interface{}) ([]byte, 
 		},
 	}.Execute(rwr, sess)
 	if err != nil {
-		log.Fatalf("Failed to Sign: %v", err)
+		return nil, fmt.Errorf("tpmjwt: failed to generate hash from TPM %v", err)
 	}
 
 	var se tpm2.Session
