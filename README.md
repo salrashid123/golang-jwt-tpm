@@ -278,7 +278,7 @@ If you want to set those up using tpm2_tools:
 ```bash
 ## RSA - password
 
-    tpm2_createprimary -C o -G rsa2048:aes128cfb -g sha256 -p pass1 -c primary.ctx -a 'restricted|decrypt|fixedtpm|fixedparent|sensitivedataorigin|userwithauth|noda'
+	tpm2_createprimary -C o -G rsa2048:aes128cfb -g sha256 -p pass1 -c primary.ctx -a 'restricted|decrypt|fixedtpm|fixedparent|sensitivedataorigin|userwithauth|noda'
 	tpm2_create -G rsa2048:rsassa:null -g sha256 -P pass1 -p pass2 -u key.pub -r key.priv -C primary.ctx
 	tpm2_flushcontext  -t
 	tpm2_getcap  handles-transient
@@ -400,6 +400,49 @@ sudo swtpm socket --tpmstate dir=/tmp/myvtpm --tpm2 --server type=tcp,port=2321 
 ## run any TPM command
 export TPM2TOOLS_TCTI="swtpm:port=2321"
 tpm2_pcrread sha256:23
+```
+
+### Errors
+
+- `tpmjwt: can't Sign: TPM_RC_SCHEME (parameter 2): unsupported or incompatible scheme`
+
+   Possibly the key being used does not sepcify all the parameters encoded into the key.  For example, if you print the public part of the key you are using, it should contain a value for `scheme` and `scheme-halg`:
+   
+```bash
+$ tpm2_print -t TPM2B_PUBLIC certs/rkey.pub
+name-alg:
+  value: sha256
+  raw: 0xb
+attributes:
+  value: fixedtpm|fixedparent|sensitivedataorigin|userwithauth|sign
+  raw: 0x40072
+type:
+  value: ecc
+  raw: 0x23
+curve-id:
+  value: NIST p256
+  raw: 0x3
+kdfa-alg:
+  value: null
+  raw: 0x10
+kdfa-halg:
+  value: (null)
+  raw: 0x0
+scheme:
+  value: ecdsa
+  raw: 0x18
+scheme-halg:
+  value: sha256
+  raw: 0xb
+sym-alg:
+  value: null
+  raw: 0x10
+sym-mode:
+  value: (null)
+  raw: 0x0
+sym-keybits: 0
+x: 59b3788ca115ca1ef8fff9d3df49e44ec8121baae656188162d3924aab84e369
+y: 570985ca93bcea21873616b59bc85f1273446caf352133d9ceb4d6315004a186
 ```
 
 ---
