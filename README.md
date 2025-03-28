@@ -10,6 +10,8 @@ For example, you can use a TPM to generate an RSA key with specifications that "
 
 How a you trust that a specific `RSA` or `ECC` key happens to be from a given TPM with a given specification set is a rather complicated protocol that is also not covered in this repo.  The specific trust protocol is called [TPM Remote Attestation](https://tpm2-software.github.io/tpm2-tss/getting-started/2019/12/18/Remote-Attestation.html).
 
+Note that Google Cloud Confidential VMs already comes built in with an `x509` Attestation Key (AK).  This simplifies the need to do full remote Attestation for GCP instances (eg, you sign a JWT and verify that that signed JWT must have originated on a specific GCE VM (see the examples folder in  [gcp-vtpm-ek-ak](https://github.com/salrashid123/gcp-vtpm-ek-ak))
+
 This repo assumes the verifier of the JWT has already established that the RSA key that is being used to sign the JWT
 
 >> this repo is not supported by google
