@@ -27,7 +27,9 @@ The following types are supported
 
 You need to first have an RSA or ECC key saved to a TPM and then specify its [go-tpm/tpm2.TPMHandle](https://pkg.go.dev/github.com/google/go-tpm@v0.9.0/tpm2#TPMHandle) with this library.
 
-In the following, the Key is referenced as a [persistent or transient handle](https://trustedcomputinggroup.org/wp-content/uploads/RegistryOfReservedTPM2HandlesAndLocalities_v1p1_pub.pdf).  Embedding a key to a TPM is out of scope of this repo but you can use [tpm2_tools](https://github.com/tpm2-software/tpm2-tools) as shown in the examples folder.
+In the following, the Key is referenced as a [persistent or transient handle](https://trustedcomputinggroup.org/wp-content/uploads/RegistryOfReservedTPM2HandlesAndLocalities_v1p1_pub.pdf) or as a PEM encoded ekyfile
+
+Embedding a key to a TPM is out of scope of this repo but you can use [tpm2_tools](https://github.com/tpm2-software/tpm2-tools) as shown in the examples folder
 
 Once the key is on a TPM (in this case, at handle `0x81008001`), usage is similar to:
 
@@ -113,6 +115,81 @@ Create RSA key at handle `0x81008001`, RSA-PSS handle at `0x81008004`; ECC at `0
 	tpm2_evictcontrol -C o -c key.ctx 0x81008005    
 ```
 
+If you would rather generate a TPM based PEM file that is compatible with openssl
+
+- using `tpm2_tools`:
+
+```bash
+	printf '\x00\x00' > unique.dat
+	tpm2_createprimary -C o -G ecc  -g sha256  -c primary.ctx -a "fixedtpm|fixedparent|sensitivedataorigin|userwithauth|noda|restricted|decrypt" -u unique.dat
+
+	tpm2_create -G rsa2048:rsassa:null -g sha256 -u key.pub -r key.priv -C primary.ctx
+
+	tpm2_load -C primary.ctx -u key.pub -r key.priv -c key.ctx
+
+	tpm2_encodeobject -C primary.ctx -u key.pub -r  key.priv -o private.pem
+```
+
+- using `openssl`:
+
+```bash
+# export TPM2OPENSSL_TCTI="device:/dev/tpmrm0"
+
+openssl genpkey --provider tpm2 --provider default -algorithm RSA -pkeyopt rsa_keygen_bits:2048 \
+      -pkeyopt rsa_keygen_pubexp:65537 -out private.pem
+```
+
+giving
+
+```bash
+$ openssl rsa --provider tpm2 --provider default --inform PEM  -text -in private.pem 
+
+Private-Key: (RSA 2048 bit, TPM 2.0)
+Modulus:
+    00:db:fc:0f:ba:1a:b0:a4:04:17:75:4d:c1:a9:7c:
+    9e:58:a5:6e:d4:2d:19:09:f6:3b:58:a1:7f:e9:cd:
+    6e:4a:23:12:52:c6:02:55:cd:c1:39:12:30:e8:b3:
+    6a:a4:68:ad:00:6d:58:72:0f:72:ec:9c:5d:9d:b3:
+    48:0a:40:ab:3f:eb:8a:a0:99:ce:ba:ac:8c:fd:79:
+    af:08:6d:1b:a9:bc:40:6f:f9:ec:89:86:25:c8:11:
+    c7:da:c4:92:99:96:24:b7:e1:26:73:35:8f:2d:16:
+    43:f1:3c:c1:00:ca:62:ea:ff:89:05:ae:9e:ad:d6:
+    dc:fc:38:72:6f:cb:c9:f6:c3:1c:be:3a:66:b3:f2:
+    fb:cd:a4:64:ff:8f:2e:a4:ba:3b:a1:c5:c7:b6:f7:
+    93:1f:c0:0a:fe:61:dd:08:34:8c:cc:20:fb:cd:eb:
+    39:8f:38:61:0f:b6:3a:5a:15:3e:05:07:97:c6:c6:
+    fb:c1:32:d7:cd:e9:6d:59:f9:6d:16:e6:a1:47:52:
+    84:b5:5e:4b:9a:7b:7a:6a:98:43:52:3d:05:54:60:
+    f3:8b:a5:66:0f:d8:26:2b:df:8b:76:68:c4:a7:dd:
+    84:48:1b:39:1b:21:b9:14:d3:13:2c:53:a9:18:2e:
+    0a:7d:b3:44:63:ad:1d:f6:5c:e5:48:2d:2f:9f:51:
+    39:97
+Exponent: 65537 (0x10001)
+Object Attributes:
+  fixedTPM
+  fixedParent
+  sensitiveDataOrigin
+  userWithAuth
+  sign / encrypt
+Signature Scheme: PKCS1
+  Hash: SHA256
+writing RSA key
+-----BEGIN TSS2 PRIVATE KEY-----
+MIICFAYGZ4EFCgEDoAMBAQECBEAAAAEEggEaARgAAQALAAQAcgAAABAAFAALCAAA
+AAAAAQDb/A+6GrCkBBd1TcGpfJ5YpW7ULRkJ9jtYoX/pzW5KIxJSxgJVzcE5EjDo
+s2qkaK0AbVhyD3LsnF2ds0gKQKs/64qgmc66rIz9ea8IbRupvEBv+eyJhiXIEcfa
+xJKZliS34SZzNY8tFkPxPMEAymLq/4kFrp6t1tz8OHJvy8n2wxy+Omaz8vvNpGT/
+jy6kujuhxce295MfwAr+Yd0INIzMIPvN6zmPOGEPtjpaFT4FB5fGxvvBMtfN6W1Z
++W0W5qFHUoS1Xkuae3pqmENSPQVUYPOLpWYP2CYr34t2aMSn3YRIGzkbIbkU0xMs
+U6kYLgp9s0RjrR32XOVILS+fUTmXBIHgAN4AIPSBINT5Q0p7+rHrG5Ve6VZOORTR
+jVmOO9rtYz+OFkK8ABCsPnJhnE9vJFr+D4L9Vod65EaUd5EdJO8YtbzTScGf5q4w
+3Kcaa2PZjWP2qWYYBKQ8sFVBFWUen6t8WXC9IgHaaN7KWg1ZFRgaRgg3WHWMfqtO
+hcnqXG0gKndpbIT4YrylhEupQzrLsMDRBfmtnywFLI+1F2dJ+W20yvdYMSAdLo8H
+K4233tKJXbo9FhNDkouiQFl4GYHPr55tVa+HLhnUJwv1UgAoOwx2KEDokprhP53v
+pu2wv5H2obE=
+-----END TSS2 PRIVATE KEY-----
+```
+
 Then run,
 
 ```bash
@@ -172,6 +249,26 @@ $ go run nopolicy/main.go --mode=ecc --persistentHandle=0x81008005 --tpm-path=/d
 	TOKEN: eyJhbGciOiJFUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJ0ZXN0IiwiZXhwIjoxNzE3MDgyOTE1fQ.rm2RNGLnmKbLkdZbrkBxyd674VPX-VtKODNLDQgea_W1IRSMtKIaFWDzkuap3NGTVqsF-A9sIkAGRCdqAqF4rQ
 	2024/05/30 11:27:35      verified with TPM PublicKey
 	2024/05/30 11:27:35      verified with exported PubicKey
+
+
+### usign PEM Keyfile
+
+$ go run go_keyfile_compat/main.go --in private.pem
+	2025/03/28 13:22:44 ======= Init  ========
+	2025/03/28 13:22:44 ======= createPrimary ========
+	2025/03/28 13:22:44 ======= reading key from file ========
+	2025/03/28 13:22:44 primaryKey Name AAszWKEUfjTt36Q2raCjVgIlRyNMycEExrNDfvDId6PXLQ==
+	2025/03/28 13:22:44      Signing PEM 
+	-----BEGIN PUBLIC KEY-----
+	MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA2/wPuhqwpAQXdU3BqXye
+	WKVu1C0ZCfY7WKF/6c1uSiMSUsYCVc3BORIw6LNqpGitAG1Ycg9y7JxdnbNICkCr
+	P+uKoJnOuqyM/XmvCG0bqbxAb/nsiYYlyBHH2sSSmZYkt+EmczWPLRZD8TzBAMpi
+	6v+JBa6erdbc/Dhyb8vJ9sMcvjpms/L7zaRk/48upLo7ocXHtveTH8AK/mHdCDSM
+	zCD7zes5jzhhD7Y6WhU+BQeXxsb7wTLXzeltWfltFuahR1KEtV5Lmnt6aphDUj0F
+	VGDzi6VmD9gmK9+LdmjEp92ESBs5GyG5FNMTLFOpGC4KfbNEY60d9lzlSC0vn1E5
+	lwIDAQAB
+	-----END PUBLIC KEY-----
+	TOKEN: eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJ0ZXN0IiwiZXhwIjoxNzQzMTgyNjI0fQ.oq5rL_Az2k_RtW_TUBfTHpIoiLktsISmQTcrzJ_pWuyY386YRcCtVprWr_1qQqDjBNlg6K4wRoFzD_s_1qNIQErb2g_gTrQ2_7HE_jbHE6131PtiDwkB2mNWaaPK-kN2utXlzOnzJf3Ca6duOntALn5eS5cA8e9joSwu3FdXVMk2pKQZLiNZWmbPi_8HyjN2gjER_e1NnbGCGpKrGpFWefIlw6OPjx6ELqsZlkQexaISwgSbdPLI6Av134LTLMMz_YaTCBNWz4GZuYH9DL6XHkGjKB5yamn-tZWjodqoVgQcZWErUDtDruUwJ_LEX95nFHWSdfPrK7t6YmmA0P0OUQ
 ```
 
 ### Session Encryption

@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bytes"
 	"context"
 	"crypto"
 	"crypto/x509"
@@ -28,53 +27,21 @@ import (
 /*
 Load a key using https://github.com/Foxboron/go-tpm-keyfiles
 
-$ go run go_keyfile_compat/main.go
+$ openssl list --providers
+Providers:
 
-2024/05/30 11:20:36 ======= Init  ========
-2024/05/30 11:20:36 ======= createPrimary ========
-2024/05/30 11:20:36 ======= create key  ========
-2024/05/30 11:20:36 ======= writing key to file ========
-2024/05/30 11:20:36 rsa Key PEM:
------BEGIN TSS2 PRIVATE KEY-----
-MIICEAYGZ4EFCgEDAgUAgAAAAASCARoBGAABAAsABAByAAAAEAAUAAsIAAAAAAAB
-ANXwPYXZ6NmYih5TP8JOG+d9iLQ+Bq87Ev8tTGwUBSeMARYbjZ2Kxhd6QlgPisp7
-rGrYEiSgFC3r4E9D27BnXkg+KOw6tn1l2m5+JPY7FqKYbqnaTTdWjDsnmHXBZGMZ
-bo5eA7lSgZC9c6RuANn0iSQPaw9cpaLCxMOAG+yH3LzUb+c+PkHug8ww5diduQwr
-dVB8bw4JQIICN3XoRXR8QRM785X+GEK7Qnk+/4aqcGzeP6rxC1mNuncj20V75JQi
-cgz4++w0rQeakSjXCWL0LmgywRKJeXl2R0HgidO13piYQ9JM4cUt28mDPcly+o3E
-culu9QS3Dd/MjpbYB00qQHcEgeAA3gAgJA3wcnk0NEcmAvKOCnSMmzy1acILMBR+
-Oq5bsv842pgAEDwoSveyh3N1nytSQDSuItEbmMfKCzQsHYrRe2mzwONt/AvTjKc2
-wQPLgR0wf2wz+yLyDA6kQ4KTvIOHxk7USzwk0tFZWvEDZi05viLsMwaGZ2yR4aYO
-rPC0FO40oAAzQkuL+3/1ZdRPRQR4iIZB3VvKhU/bBFsHMwfUoZZMz7/YLrgsNeJH
-XBjB1HtTp6keeCm3ljuVRUkSvyXFSMH0atvowRMLdFZ0TSO3SvFUTBDOTfMSWke6
-0HWcbw==
------END TSS2 PRIVATE KEY-----
-
-2024/05/30 11:20:36 ======= reading key from file ========
-2024/05/30 11:20:36 primaryKey Name AAvaZWBJngiVUFq6Dg/Q7uBxAK3INE3G/GOsnm7v0TGujQ==
-2024/05/30 11:20:36      Signing PEM
------BEGIN PUBLIC KEY-----
-MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA1fA9hdno2ZiKHlM/wk4b
-532ItD4GrzsS/y1MbBQFJ4wBFhuNnYrGF3pCWA+KynusatgSJKAULevgT0PbsGde
-SD4o7Dq2fWXabn4k9jsWophuqdpNN1aMOyeYdcFkYxlujl4DuVKBkL1zpG4A2fSJ
-JA9rD1ylosLEw4Ab7IfcvNRv5z4+Qe6DzDDl2J25DCt1UHxvDglAggI3dehFdHxB
-Ezvzlf4YQrtCeT7/hqpwbN4/qvELWY26dyPbRXvklCJyDPj77DStB5qRKNcJYvQu
-aDLBEol5eXZHQeCJ07XemJhD0kzhxS3byYM9yXL6jcRy6W71BLcN38yOltgHTSpA
-dwIDAQAB
------END PUBLIC KEY-----
-TOKEN: eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJ0ZXN0IiwiZXhwIjoxNzE3MDgyNDk2fQ.Gyb8YIeQsbbl5mFVn55dO-J26HuwM1JK94RdrOEafySI7YJzfOkSeSAaSHvNR9aPiHh--nx3oMYpxPwPR161mKBF-w9DETqHn6lUqFSYzEk7tut-E1LrohrACkhSS_VbJuUw9S57imYMqzI9BTKm-FFG1mYBktWI0UWxC7e5wGaajS_cJc7fRx-5Ni-lDyBxYL1Az1ApIg9bwkEJxG7fLSI2_nsO9Unzd1mpRZ2nBUMjaK2aoG8vZMhHOK80R46VEeBq1ZT2xoaXiNZshBRf2mIptLpfSNVjT1gDCWdKVtIaBHevTpzmQLflQJVdSNKinCst-7N_QzF2UEPRBGx7GQ
-2024/05/30 11:20:36      verified with TPM PublicKey
-2024/05/30 11:20:36      verified with exported PubicKey
-
-// note the primary is created using the h2 template
-//   printf '\x00\x00' > /tmp/unique.dat
-//   tpm2_createprimary -C o -G ecc  -g sha256 \
-//       -c primary.ctx \
-//       -a "fixedtpm|fixedparent|sensitivedataorigin|userwithauth|noda|restricted|decrypt" -u /tmp/unique.dat
+	default
+	  name: OpenSSL Default Provider
+	  version: 3.5.0
+	  status: active
+	tpm2
+	  name: TPM 2.0 Provider
+	  version: 1.2.0
+	  status: active
 */
 var (
 	tpmPath = flag.String("tpm-path", "127.0.0.1:2321", "Path to the TPM device (character device or a Unix socket).")
-	out     = flag.String("out", "private.pem", "privateKey File")
+	in      = flag.String("in", "private.pem", "privateKey File")
 )
 
 var TPMDEVICES = []string{"/dev/tpm0", "/dev/tpmrm0"}
@@ -128,101 +95,8 @@ func main() {
 		_, _ = flushContextCmd.Execute(rwr)
 	}()
 
-	// rsa
-
-	log.Printf("======= create key  ========")
-
-	rsaTemplate := tpm2.TPMTPublic{
-		Type:    tpm2.TPMAlgRSA,
-		NameAlg: tpm2.TPMAlgSHA256,
-		ObjectAttributes: tpm2.TPMAObject{
-			SignEncrypt:         true,
-			FixedTPM:            true,
-			FixedParent:         true,
-			SensitiveDataOrigin: true,
-			UserWithAuth:        true,
-		},
-		AuthPolicy: tpm2.TPM2BDigest{},
-		Parameters: tpm2.NewTPMUPublicParms(
-			tpm2.TPMAlgRSA,
-			&tpm2.TPMSRSAParms{
-				Scheme: tpm2.TPMTRSAScheme{
-					Scheme: tpm2.TPMAlgRSASSA,
-					Details: tpm2.NewTPMUAsymScheme(
-						tpm2.TPMAlgRSASSA,
-						&tpm2.TPMSSigSchemeRSASSA{
-							HashAlg: tpm2.TPMAlgSHA256,
-						},
-					),
-				},
-				KeyBits: 2048,
-			},
-		),
-		Unique: tpm2.NewTPMUPublicID(
-			tpm2.TPMAlgRSA,
-			&tpm2.TPM2BPublicKeyRSA{
-				Buffer: make([]byte, 256),
-			},
-		),
-	}
-
-	rsaKeyResponse, err := tpm2.CreateLoaded{
-		ParentHandle: tpm2.AuthHandle{
-			Handle: primaryKey.ObjectHandle,
-			Name:   primaryKey.Name,
-			Auth:   tpm2.PasswordAuth(nil),
-		},
-		InPublic: tpm2.New2BTemplate(&rsaTemplate),
-	}.Execute(rwr)
-	if err != nil {
-		log.Fatalf("can't create rsa %v", err)
-	}
-
-	defer func() {
-		flushContextCmd := tpm2.FlushContext{
-			FlushHandle: rsaKeyResponse.ObjectHandle,
-		}
-		_, _ = flushContextCmd.Execute(rwr)
-	}()
-
-	// write the key to file
-	log.Printf("======= writing key to file ========")
-
-	tkf := &keyfile.TPMKey{
-		Keytype:    keyfile.OIDLoadableKey,
-		EmptyAuth:  true,
-		AuthPolicy: []*keyfile.TPMAuthPolicy{},
-		Parent:     tpm2.TPMRHOwner,
-		Pubkey:     rsaKeyResponse.OutPublic,
-		Privkey:    rsaKeyResponse.OutPrivate,
-	}
-
-	b := new(bytes.Buffer)
-
-	err = keyfile.Encode(b, tkf)
-	if err != nil {
-		log.Fatalf("failed to encode Key: %v", err)
-	}
-
-	log.Printf("rsa Key PEM: \n%s\n", b)
-
-	err = os.WriteFile(*out, b.Bytes(), 0644)
-	if err != nil {
-		log.Fatalf("failed to write private key to file %v", err)
-	}
-
-	flushContextRSACmd := tpm2.FlushContext{
-		FlushHandle: rsaKeyResponse.ObjectHandle,
-	}
-	_, _ = flushContextRSACmd.Execute(rwr)
-
-	flushContextPrimaryCmd := tpm2.FlushContext{
-		FlushHandle: primaryKey.ObjectHandle,
-	}
-	_, _ = flushContextPrimaryCmd.Execute(rwr)
-
 	log.Printf("======= reading key from file ========")
-	c, err := os.ReadFile(*out)
+	c, err := os.ReadFile(*in)
 	if err != nil {
 		log.Fatalf("error reading private keyfile: %v", err)
 	}
