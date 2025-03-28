@@ -39,6 +39,7 @@ signs:
 env_files:
   github_token: ~/.config/goreleaser/github_token
 source:
+  enabled: false
   name_template: '{{ .ProjectName }}-{{ .Version }}'
   format: tar.gz
 gomod:

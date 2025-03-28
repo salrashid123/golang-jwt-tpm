@@ -67,6 +67,3 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GPG_FINGERPRINT: ${{ secrets.GPG_FINGERPRINT }}
-      - uses: actions/attest-build-provenance@v2
-        with:
-          subject-checksums: "dist/golang-jwt-tpm_${{steps.set_version.outputs.no-dash}}_checksums.txt"
