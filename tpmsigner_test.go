@@ -467,41 +467,53 @@ func TestTPMClaim(t *testing.T) {
 	}()
 	SigningMethodTPMRS256.Override()
 
-	issuer := "test"
-	claims := &jwt.RegisteredClaims{
-		ExpiresAt: &jwt.NumericDate{time.Now().Add(time.Minute * 1)},
-		Issuer:    issuer,
+	zeroBytes := make([]byte, 2048)
+
+	tests := []struct {
+		name   string
+		issuer string
+	}{
+		{"small_claim", "test"},
+		{"large_claim", string(zeroBytes)},
 	}
-	token := jwt.NewWithClaims(SigningMethodTPMRS256, claims)
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			claims := &jwt.RegisteredClaims{
+				ExpiresAt: &jwt.NumericDate{time.Now().Add(time.Minute * 1)},
+				Issuer:    tc.issuer,
+			}
+			token := jwt.NewWithClaims(SigningMethodTPMRS256, claims)
 
-	pub, err := tpm2.ReadPublic{
-		ObjectHandle: rsaKeyResponse.ObjectHandle,
-	}.Execute(rwr)
-	require.NoError(t, err)
+			pub, err := tpm2.ReadPublic{
+				ObjectHandle: rsaKeyResponse.ObjectHandle,
+			}.Execute(rwr)
+			require.NoError(t, err)
 
-	config := &TPMConfig{
-		TPMDevice: tpmDevice,
-		NamedHandle: tpm2.NamedHandle{
-			Handle: rsaKeyResponse.ObjectHandle,
-			Name:   pub.Name,
-		},
+			config := &TPMConfig{
+				TPMDevice: tpmDevice,
+				NamedHandle: tpm2.NamedHandle{
+					Handle: rsaKeyResponse.ObjectHandle,
+					Name:   pub.Name,
+				},
+			}
+			keyctx, err := NewTPMContext(context.Background(), config)
+			require.NoError(t, err)
+
+			tokenString, err := token.SignedString(keyctx)
+			require.NoError(t, err)
+
+			// verify with TPM based publicKey
+			keyFunc, err := TPMVerfiyKeyfunc(context.Background(), config)
+			require.NoError(t, err)
+
+			vtoken, err := jwt.Parse(tokenString, keyFunc)
+			require.NoError(t, err)
+
+			tokenIssuer, err := vtoken.Claims.GetIssuer()
+			require.NoError(t, err)
+			require.Equal(t, tc.issuer, tokenIssuer)
+		})
 	}
-	keyctx, err := NewTPMContext(context.Background(), config)
-	require.NoError(t, err)
-
-	tokenString, err := token.SignedString(keyctx)
-	require.NoError(t, err)
-
-	// verify with TPM based publicKey
-	keyFunc, err := TPMVerfiyKeyfunc(context.Background(), config)
-	require.NoError(t, err)
-
-	vtoken, err := jwt.Parse(tokenString, keyFunc)
-	require.NoError(t, err)
-
-	tokenIssuer, err := vtoken.Claims.GetIssuer()
-	require.NoError(t, err)
-	require.Equal(t, issuer, tokenIssuer)
 }
 
 func TestTPMRSAPSS(t *testing.T) {

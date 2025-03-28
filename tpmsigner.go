@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto"
 	"crypto/ecdsa"
+	"crypto/rand"
 	"crypto/rsa"
 	"errors"
 	"fmt"
@@ -202,20 +203,100 @@ func (s *SigningMethodTPM) Sign(signingString string, key interface{}) ([]byte, 
 		sess = tpm2.HMAC(tpm2.TPMAlgSHA256, 16, tpm2.AESEncryption(128, tpm2.EncryptIn))
 	}
 
-	h, err := tpm2.Hash{
-		Hierarchy: tpm2.TPMRHEndorsement,
-		HashAlg:   tpm2.TPMAlgSHA256,
-		Data: tpm2.TPM2BMaxBuffer{
-			Buffer: []byte(signingString),
-		},
-	}.Execute(rwr, sess)
-	if err != nil {
-		return nil, fmt.Errorf("tpmjwt: failed to generate hash from TPM %v", err)
+	// max buffer has to be atleast 1024, either use this floor or get it from the TPM itself
+	maxDigestBuffer := 1024
+
+	// getRsp, err := tpm2.GetCapability{
+	// 	Capability:    tpm2.TPMCapTPMProperties,
+	// 	Property:      uint32(tpm2.TPMPTInputBuffer),
+	// 	PropertyCount: 1,
+	// }.Execute(rwr)
+	// if err != nil {
+	// 	return nil, fmt.Errorf("tpmjwt: failed to run capability %v", err)
+	// }
+
+	// tp, err := getRsp.CapabilityData.Data.TPMProperties()
+	// if err != nil {
+	// 	return nil, fmt.Errorf("tpmjwt: failed to get capability %v", err)
+	// }
+	// maxDigestBuffer = int(tp.TPMProperty[0].Value)
+
+	data := []byte(signingString)
+
+	var hsh []byte
+	var val []byte
+	if len(data) > maxDigestBuffer {
+		pss := make([]byte, 32)
+		_, err := rand.Read(pss)
+		if err != nil {
+			return nil, fmt.Errorf("tpmjwt: failed to generate random for hash %v", err)
+		}
+
+		rspHSS, err := tpm2.HashSequenceStart{
+			Auth: tpm2.TPM2BAuth{
+				Buffer: pss,
+			},
+			HashAlg: tpm2.TPMAlgSHA256,
+		}.Execute(rwr)
+		if err != nil {
+			return nil, fmt.Errorf("tpmjwt: failed to generate hash from TPM HashSequenceStart %v", err)
+		}
+
+		authHandle := tpm2.AuthHandle{
+			Handle: rspHSS.SequenceHandle,
+			Name: tpm2.TPM2BName{
+				Buffer: pss,
+			},
+			Auth: tpm2.PasswordAuth(pss),
+		}
+
+		for len(data) > maxDigestBuffer {
+			_, err := tpm2.SequenceUpdate{
+				SequenceHandle: authHandle,
+				Buffer: tpm2.TPM2BMaxBuffer{
+					Buffer: data[:maxDigestBuffer],
+				},
+			}.Execute(rwr, sess)
+			if err != nil {
+				return nil, fmt.Errorf("tpmjwt: failed to generate hash SequenceUpdate  %v", err)
+			}
+
+			data = data[maxDigestBuffer:]
+		}
+
+		rspSC, err := tpm2.SequenceComplete{
+			SequenceHandle: authHandle,
+			Buffer: tpm2.TPM2BMaxBuffer{
+				Buffer: data,
+			},
+			Hierarchy: tpm2.TPMRHEndorsement,
+		}.Execute(rwr, sess)
+		if err != nil {
+			return nil, fmt.Errorf("tpmjwt: failed to generate hash from TPM SequenceComplete %v", err)
+		}
+
+		hsh = rspSC.Result.Buffer
+		val = rspSC.Validation.Digest.Buffer
+	} else {
+		h, err := tpm2.Hash{
+			Hierarchy: tpm2.TPMRHEndorsement,
+			HashAlg:   tpm2.TPMAlgSHA256,
+			Data: tpm2.TPM2BMaxBuffer{
+				Buffer: []byte(signingString),
+			},
+		}.Execute(rwr, sess)
+		if err != nil {
+			return nil, fmt.Errorf("tpmjwt: failed to generate hash from TPM %v", err)
+		}
+
+		hsh = h.OutHash.Buffer
+		val = h.Validation.Digest.Buffer
 	}
 
 	var se tpm2.Session
 	if config.AuthSession != nil {
 		var closer func() error
+		var err error
 		se, closer, err = config.AuthSession.GetSession()
 		if err != nil {
 			return nil, fmt.Errorf("tpmjwt: error getting session %s", s.Alg())
@@ -235,7 +316,7 @@ func (s *SigningMethodTPM) Sign(signingString string, key interface{}) ([]byte, 
 					Auth:   se,
 				},
 				Digest: tpm2.TPM2BDigest{
-					Buffer: h.OutHash.Buffer,
+					Buffer: hsh,
 				},
 				InScheme: tpm2.TPMTSigScheme{
 					Scheme: tpm2.TPMAlgRSASSA,
@@ -250,7 +331,7 @@ func (s *SigningMethodTPM) Sign(signingString string, key interface{}) ([]byte, 
 					Tag:       tpm2.TPMSTHashCheck,
 					Hierarchy: tpm2.TPMRHEndorsement,
 					Digest: tpm2.TPM2BDigest{
-						Buffer: h.Validation.Digest.Buffer,
+						Buffer: val,
 					},
 				},
 			}.Execute(rwr, sess)
@@ -272,7 +353,7 @@ func (s *SigningMethodTPM) Sign(signingString string, key interface{}) ([]byte, 
 					Auth:   se,
 				},
 				Digest: tpm2.TPM2BDigest{
-					Buffer: h.OutHash.Buffer,
+					Buffer: hsh,
 				},
 				InScheme: tpm2.TPMTSigScheme{
 					Scheme: tpm2.TPMAlgRSAPSS,
@@ -287,7 +368,7 @@ func (s *SigningMethodTPM) Sign(signingString string, key interface{}) ([]byte, 
 					Tag:       tpm2.TPMSTHashCheck,
 					Hierarchy: tpm2.TPMRHEndorsement,
 					Digest: tpm2.TPM2BDigest{
-						Buffer: h.Validation.Digest.Buffer,
+						Buffer: val,
 					},
 				},
 			}.Execute(rwr, sess)
@@ -314,7 +395,7 @@ func (s *SigningMethodTPM) Sign(signingString string, key interface{}) ([]byte, 
 					Auth:   se,
 				},
 				Digest: tpm2.TPM2BDigest{
-					Buffer: h.OutHash.Buffer,
+					Buffer: hsh,
 				},
 				InScheme: tpm2.TPMTSigScheme{
 					Scheme: tpm2.TPMAlgECDSA,
@@ -329,7 +410,7 @@ func (s *SigningMethodTPM) Sign(signingString string, key interface{}) ([]byte, 
 					Tag:       tpm2.TPMSTHashCheck,
 					Hierarchy: tpm2.TPMRHEndorsement,
 					Digest: tpm2.TPM2BDigest{
-						Buffer: h.Validation.Digest.Buffer,
+						Buffer: val,
 					},
 				},
 			}.Execute(rwr, sess)

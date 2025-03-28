@@ -80,37 +80,37 @@ To use this library, you need a TPM to issue a JWT (you do not need a TPM to ver
 
 For simplicity, the following generates and embeds keys into a persistent handle using [tpm2_tools](https://github.com/tpm2-software/tpm2-tools).  (You are free to use any system to provision a key)
 
-#### RSA 
+#### Key Generation 
 
-Create RSA key at handle `0x81008001`, RSA-PSS handle at `0x81008004`. 
+Create RSA key at handle `0x81008001`, RSA-PSS handle at `0x81008004`; ECC at `0x81008005`
 
 ```bash
 ## RSA - no password
-	tpm2_createprimary -C o -G rsa2048:aes128cfb -g sha256 -c primary.ctx -a 'restricted|decrypt|fixedtpm|fixedparent|sensitivedataorigin|userwithauth|noda'
+	printf '\x00\x00' > unique.dat
+	tpm2_createprimary -C o -G ecc  -g sha256  -c primary.ctx -a "fixedtpm|fixedparent|sensitivedataorigin|userwithauth|noda|restricted|decrypt" -u unique.dat
+
 	tpm2_create -G rsa2048:rsassa:null -g sha256 -u key.pub -r key.priv -C primary.ctx
-	tpm2_flushcontext  -t
-	tpm2_getcap  handles-transient
+
 	tpm2_load -C primary.ctx -u key.pub -r key.priv -c key.ctx
 	tpm2_evictcontrol -C o -c key.ctx 0x81008001
-	tpm2_flushcontext  -t
 
 ## rsa-pss
-	tpm2_createprimary -C o -G rsa2048:aes128cfb -g sha256 -c primary.ctx -a 'restricted|decrypt|fixedtpm|fixedparent|sensitivedataorigin|userwithauth|noda'
+	printf '\x00\x00' > unique.dat
+	tpm2_createprimary -C o -G ecc  -g sha256  -c primary.ctx -a "fixedtpm|fixedparent|sensitivedataorigin|userwithauth|noda|restricted|decrypt" -u unique.dat
+
 	tpm2_create -G rsa2048:rsapss:null -g sha256 -u key.pub -r key.priv -C primary.ctx  --format=pem --output=rsapss_public.pem
-	tpm2_flushcontext  -t
-	tpm2_getcap  handles-transient 
+
 	tpm2_load -C primary.ctx -u key.pub -r key.priv -c key.ctx
 	tpm2_evictcontrol -C o -c key.ctx 0x81008004
-	tpm2_flushcontext  -t
 
 ## ecc
-	tpm2_createprimary -C o -G rsa2048:aes128cfb -g sha256 -c primary.ctx -a 'restricted|decrypt|fixedtpm|fixedparent|sensitivedataorigin|userwithauth|noda'
+	printf '\x00\x00' > unique.dat
+	tpm2_createprimary -C o -G ecc  -g sha256  -c primary.ctx -a "fixedtpm|fixedparent|sensitivedataorigin|userwithauth|noda|restricted|decrypt" -u unique.dat
+
 	tpm2_create -G ecc:ecdsa  -g sha256  -u key.pub -r key.priv -C primary.ctx  --format=pem --output=ecc_public.pem
-	tpm2_flushcontext  -t
-	tpm2_getcap  handles-transient  
+
 	tpm2_load -C primary.ctx -u key.pub -r key.priv -c key.ctx
 	tpm2_evictcontrol -C o -c key.ctx 0x81008005    
-	tpm2_flushcontext  -t	
 ```
 
 Then run,
@@ -119,7 +119,7 @@ Then run,
 cd example/
 
 ## RS256
-$ go run nopolicy/main.go --mode=rsa --persistentHandle=0x81008001 --tpm-path=/dev/tpm0
+$ go run nopolicy/main.go --mode=rsa --persistentHandle=0x81008001 --tpm-path=/dev/tpmrm0
 
 	2024/05/30 11:26:54 ======= Init  ========
 	2024/05/30 11:26:54 primaryKey Name AAvaZWBJngiVUFq6Dg/Q7uBxAK3INE3G/GOsnm7v0TGujQ==
@@ -140,7 +140,7 @@ $ go run nopolicy/main.go --mode=rsa --persistentHandle=0x81008001 --tpm-path=/d
 
 
 ## PS256
-$ go run nopolicy/main.go --mode=rsapss --persistentHandle=0x81008004 --tpm-path=/dev/tpm0
+$ go run nopolicy/main.go --mode=rsapss --persistentHandle=0x81008004 --tpm-path=/dev/tpmrm0
 
 	2024/05/30 11:27:10 ======= Init  ========
 	2024/05/30 11:27:10 primaryKey Name AAvaZWBJngiVUFq6Dg/Q7uBxAK3INE3G/GOsnm7v0TGujQ==
@@ -160,7 +160,7 @@ $ go run nopolicy/main.go --mode=rsapss --persistentHandle=0x81008004 --tpm-path
 
 
 ## ES356
-$ go run nopolicy/main.go --mode=ecc --persistentHandle=0x81008005 --tpm-path=/dev/tpm0
+$ go run nopolicy/main.go --mode=ecc --persistentHandle=0x81008005 --tpm-path=/dev/tpmrm0
 
 	2024/05/30 11:27:35 ======= Init  ========
 	2024/05/30 11:27:35 primaryKey Name AAvaZWBJngiVUFq6Dg/Q7uBxAK3INE3G/GOsnm7v0TGujQ==
@@ -278,13 +278,13 @@ If you want to set those up using tpm2_tools:
 ```bash
 ## RSA - password
 
-	tpm2_createprimary -C o -G rsa2048:aes128cfb -g sha256 -p pass1 -c primary.ctx -a 'restricted|decrypt|fixedtpm|fixedparent|sensitivedataorigin|userwithauth|noda'
+	printf '\x00\x00' > unique.dat
+	tpm2_createprimary -C o -G ecc  -g sha256  -c primary.ctx -a "fixedtpm|fixedparent|sensitivedataorigin|userwithauth|noda|restricted|decrypt" -u unique.dat
+
 	tpm2_create -G rsa2048:rsassa:null -g sha256 -P pass1 -p pass2 -u key.pub -r key.priv -C primary.ctx
-	tpm2_flushcontext  -t
 	tpm2_getcap  handles-transient
 	tpm2_load -C primary.ctx -P pass1 -u key.pub -r key.priv -c key.ctx
 	tpm2_evictcontrol -C o -c key.ctx 0x81008002
-	tpm2_flushcontext  -t
 
 ## RSA - pcr
 
@@ -292,15 +292,13 @@ If you want to set those up using tpm2_tools:
 	tpm2_startauthsession -S session.dat
 	tpm2_policypcr -S session.dat -l sha256:23  -L policy.dat
 	tpm2_flushcontext session.dat
-	tpm2_flushcontext  -t
-	tpm2_createprimary -C o -G rsa2048:aes128cfb -g sha256  -c primary.ctx -a 'restricted|decrypt|fixedtpm|fixedparent|sensitivedataorigin|userwithauth|noda'
+
+	printf '\x00\x00' > unique.dat
+	tpm2_createprimary -C o -G ecc  -g sha256  -c primary.ctx -a "fixedtpm|fixedparent|sensitivedataorigin|userwithauth|noda|restricted|decrypt" -u unique.dat
+
 	tpm2_create -G rsa2048:rsassa:null -g sha256 -u key.pub -r key.priv -C primary.ctx  -L policy.dat
-	tpm2_flushcontext  -t
-	tpm2_getcap  handles-transient
 	tpm2_load -C primary.ctx -u key.pub -r key.priv -c key.ctx
 	tpm2_evictcontrol -C o -c key.ctx 0x81008003
-	tpm2_flushcontext  -t
-
 ```
 
 Then,

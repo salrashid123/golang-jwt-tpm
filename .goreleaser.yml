@@ -1,4 +1,5 @@
 project_name: golang-jwt-tpm
+version: 2
 release:
   draft: true
   github:
@@ -8,23 +9,16 @@ release:
   extra_files:
 builds:
 - skip: true
-scoop:
-  name: golang-jwt-tpm
-  commit_author:
-    name: sal
-    email: salrashid123@gmail.com
-  commit_msg_template: Scoop update for {{ .ProjectName }} version {{ .Tag }}
-  goamd64: v1
 archives:
   - id: archive
     name_template: '{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}{{ with .Arm }}v{{ . }}{{ end }}{{ with .Mips }}_{{ . }}{{ end }}{{ if not (eq .Amd64 "v1") }}{{ .Amd64 }}{{ end }}'
-    format: tar.gz
+    formats: ['tar.gz']
     files:
       - LICENSE*
       - README*    
       - dist/*.sig      
 snapshot:
-  name_template: '{{ .Version }}-SNAPSHOT-{{ .ShortCommit }}'
+  version_template: '{{ .Version }}'
 checksum:
   name_template: '{{ .ProjectName }}_{{ .Version }}_checksums.txt'
   algorithm: sha256

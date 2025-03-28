@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"crypto"
+	"crypto/ecdsa"
 	"crypto/x509"
 	"encoding/base64"
 	"encoding/pem"
@@ -10,6 +11,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"math/big"
 	"net"
 	"slices"
 	"time"
@@ -148,13 +150,15 @@ func main() {
 			log.Fatalf("error reading ec unique %v", err)
 		}
 
-		crv, err := eccDetail.CurveID.ECDHCurve()
+		crv, err := eccDetail.CurveID.Curve()
 		if err != nil {
-			log.Fatalf("error reading ec curve %v", err)
+			log.Fatalf("Unable to Read Public ec curve TPM: %v", err)
 		}
-		pubKey, err = tpm2.ECDHPubKey(crv, ecUnique)
-		if err != nil {
-			log.Fatalf("Failed to get ecc public key: %v", err)
+
+		pubKey = &ecdsa.PublicKey{
+			Curve: crv,
+			X:     big.NewInt(0).SetBytes(ecUnique.X.Buffer),
+			Y:     big.NewInt(0).SetBytes(ecUnique.Y.Buffer),
 		}
 
 	default:
