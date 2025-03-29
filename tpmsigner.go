@@ -61,10 +61,14 @@ func NewTPMContext(parent context.Context, val *TPMConfig) (context.Context, err
 	if val.TPMDevice == nil {
 		return nil, fmt.Errorf("tpmjwt: tpm device must be specified")
 	}
-	if &val.Handle == nil && &val.NamedHandle == nil {
+	if val.Handle > 0 && val.NamedHandle.Handle > 0 {
 		return nil, fmt.Errorf("tpmjwt: either Handle, NameHandle must be specified")
 	}
 	rwr := transport.FromReadWriter(val.TPMDevice)
+
+	if val.NamedHandle.Handle > 0 {
+		val.Handle = tpm2.TPMHandle(val.NamedHandle.HandleValue())
+	}
 
 	pub, err := tpm2.ReadPublic{
 		ObjectHandle: val.Handle,
