@@ -72,7 +72,6 @@ func main() {
 		ExpiresAt: &jwt.NumericDate{time.Now().Add(time.Minute * 1)},
 		Issuer:    "test",
 	}
-
 	var token *jwt.Token
 
 	primaryKey, err := tpm2.CreatePrimary{
@@ -149,10 +148,7 @@ func main() {
 
 	config := &tpmjwt.TPMConfig{
 		TPMDevice: rwc,
-		NamedHandle: tpm2.NamedHandle{
-			Handle: tpm2.TPMHandle(*persistentHandle),
-			Name:   pub.Name,
-		},
+		Handle:    tpm2.TPMHandle(*persistentHandle),
 	}
 
 	keyctx, err := tpmjwt.NewTPMContext(ctx, config)

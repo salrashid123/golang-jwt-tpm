@@ -13,18 +13,18 @@ import (
 
 	jwt "github.com/golang-jwt/jwt/v5"
 
+	_ "crypto/sha256"
+
 	"github.com/google/go-tpm/tpm2"
 	"github.com/google/go-tpm/tpm2/transport"
-
-	_ "crypto/sha256"
 )
 
 // Much of this implementation is inspired templated form [gcp-jwt-go](https://github.com/someone1/gcp-jwt-go)
 
 type TPMConfig struct {
-	TPMDevice   io.ReadWriteCloser
-	NamedHandle tpm2.NamedHandle
-	//Name             tpm2.TPM2BName
+	TPMDevice        io.ReadWriteCloser
+	Handle           tpm2.TPMHandle   // Object Handle (must specify either Handle or TPMKey)
+	NamedHandle      tpm2.NamedHandle // Deprecated: NamedHandle is no longer recommended, use Handle instead
 	AuthSession      Session          // If the key needs a session, supply one as the `tpmjwt.Session`
 	KeyID            string           // (optional) the TPM keyID (normally the key "Name")
 	publicKeyFromTPM crypto.PublicKey // the public key as read from KeyHandleFile, KeyHandleNV
@@ -58,13 +58,16 @@ type SigningMethodTPM struct {
 
 func NewTPMContext(parent context.Context, val *TPMConfig) (context.Context, error) {
 	// first check if a TPM is even involved in the picture here since we can verify w/o a TPM
-	if val.TPMDevice == nil || &val.NamedHandle == nil {
-		return nil, fmt.Errorf("tpmjwt: tpm device or key not set")
+	if val.TPMDevice == nil {
+		return nil, fmt.Errorf("tpmjwt: tpm device must be specified")
+	}
+	if &val.Handle == nil && &val.NamedHandle == nil {
+		return nil, fmt.Errorf("tpmjwt: either Handle, NameHandle must be specified")
 	}
 	rwr := transport.FromReadWriter(val.TPMDevice)
 
 	pub, err := tpm2.ReadPublic{
-		ObjectHandle: tpm2.TPMHandle(val.NamedHandle.HandleValue()),
+		ObjectHandle: val.Handle,
 	}.Execute(rwr)
 	if err != nil {
 		return nil, fmt.Errorf("tpmjwt: error executing tpm2.ReadPublic %v", err)
@@ -311,8 +314,8 @@ func (s *SigningMethodTPM) Sign(signingString string, key interface{}) ([]byte, 
 
 			rspSign, err := tpm2.Sign{
 				KeyHandle: tpm2.AuthHandle{
-					Handle: config.NamedHandle.Handle,
-					Name:   config.NamedHandle.Name,
+					Handle: config.Handle,
+					Name:   config.name,
 					Auth:   se,
 				},
 				Digest: tpm2.TPM2BDigest{
@@ -348,8 +351,8 @@ func (s *SigningMethodTPM) Sign(signingString string, key interface{}) ([]byte, 
 		} else if s.Alg() == "PS256" {
 			rspSign, err := tpm2.Sign{
 				KeyHandle: tpm2.AuthHandle{
-					Handle: config.NamedHandle.Handle,
-					Name:   config.NamedHandle.Name,
+					Handle: config.Handle,
+					Name:   config.name,
 					Auth:   se,
 				},
 				Digest: tpm2.TPM2BDigest{
@@ -390,8 +393,8 @@ func (s *SigningMethodTPM) Sign(signingString string, key interface{}) ([]byte, 
 		if s.Alg() == "ES256" {
 			rspSign, err := tpm2.Sign{
 				KeyHandle: tpm2.AuthHandle{
-					Handle: config.NamedHandle.Handle,
-					Name:   config.NamedHandle.Name,
+					Handle: config.Handle,
+					Name:   config.name,
 					Auth:   se,
 				},
 				Digest: tpm2.TPM2BDigest{

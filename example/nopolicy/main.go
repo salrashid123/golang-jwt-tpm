@@ -180,20 +180,9 @@ func main() {
 	)
 	log.Printf("     Signing PEM \n%s", string(akPubPEM))
 
-	rpub, err := tpm2.ReadPublic{
-		ObjectHandle: tpm2.TPMHandle(*persistentHandle),
-	}.Execute(rwr)
-	if err != nil {
-		log.Printf("ERROR:  could not get public: %v", err)
-		return
-	}
-
 	config := &tpmjwt.TPMConfig{
 		TPMDevice: rwc,
-		NamedHandle: tpm2.NamedHandle{
-			Handle: tpm2.TPMHandle(*persistentHandle),
-			Name:   rpub.Name,
-		},
+		Handle:    tpm2.TPMHandle(*persistentHandle),
 	}
 
 	keyctx, err := tpmjwt.NewTPMContext(ctx, config)

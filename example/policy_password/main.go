@@ -138,21 +138,14 @@ func main() {
 	)
 	log.Printf("     Signing PEM \n%s", string(akPubPEM))
 
-	rpub, err := tpm2.ReadPublic{
-		ObjectHandle: tpm2.TPMHandle(*persistentHandle),
-	}.Execute(rwr)
-
 	p, err := tpmjwt.NewPasswordSession(rwr, []byte(keyPass))
 	if err != nil {
 		log.Printf("ERROR:  could not get MarshalPKIXPublicKey: %v", err)
 		return
 	}
 	config := &tpmjwt.TPMConfig{
-		TPMDevice: rwc,
-		NamedHandle: tpm2.NamedHandle{
-			Handle: tpm2.TPMHandle(*persistentHandle),
-			Name:   rpub.Name,
-		},
+		TPMDevice:   rwc,
+		Handle:      tpm2.TPMHandle(*persistentHandle),
 		AuthSession: p,
 	}
 

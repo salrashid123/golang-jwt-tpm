@@ -50,18 +50,9 @@ rwc, err := tpm2.OpenTPM("/dev/tpmrm0")
 defer rwc.Close()
 rwr := transport.FromReadWriter(rwc)
 
-// get an existing tpm based keys persistent or handle
-// pass that to this library along with any session authorization 
-rpub, err := tpm2.ReadPublic{
-	ObjectHandle: tpm2.TPMHandle(0x81008001),
-}.Execute(rwr)
-
 config := &tpmjwt.TPMConfig{
 	TPMDevice: rwc,
-	NamedHandle: tpm2.NamedHandle{
-		Handle: tpm2.TPMHandle(0x81008001),
-		Name:   rpub.Name,
-	},
+	Handle: tpm2.TPMHandle(0x81008001),
 }
 
 keyctx, err := tpmjwt.NewTPMContext(ctx, config)
@@ -292,10 +283,7 @@ If you want to enable [session encryption](https://github.com/salrashid123/tpm2/
 
 	config := &tpmjwt.TPMConfig{
 		TPMDevice: rwc,
-		NamedHandle: tpm2.NamedHandle{
-			Handle: tpm2.TPMHandle(0x81008001),
-			Name:   rpub.Name,
-		},
+		Handle: tpm2.TPMHandle(0x81008001),
 		EncryptionHandle: createEKRsp.ObjectHandle,
 		EncryptionPub:    encryptionPub,
 	}
@@ -340,10 +328,7 @@ eg, for Password Policy:
 	p, err := tpmjwt.NewPasswordSession(rwr, []byte(keyPass))
 	config := &tpmjwt.TPMConfig{
 		TPMDevice: rwc,
-		NamedHandle: tpm2.NamedHandle{
-			Handle: tpm2.TPMHandle(*persistentHandle),
-			Name:   rpub.Name,
-		},
+		Handle: tpm2.TPMHandle(*persistentHandle),
 		AuthSession: p,
 	}
 ```
@@ -364,10 +349,7 @@ For PCR Policy:
 
 	config := &tpmjwt.TPMConfig{
 		TPMDevice: rwc,
-		NamedHandle: tpm2.NamedHandle{
-			Handle: tpm2.TPMHandle(*persistentHandle),
-			Name:   rpub.Name,
-		},
+		Handle: tpm2.TPMHandle(*persistentHandle),
 		AuthSession: p,
 	}
 ```
@@ -478,21 +460,19 @@ which you can call as:
 
 	config := &tpmjwt.TPMConfig{
 		TPMDevice: rwc,
-		NamedHandle: tpm2.NamedHandle{
-			Handle: tpm2.TPMHandle(*persistentHandle),
-			Name:   rpub.Name,
-		},
+		Handle: tpm2.TPMHandle(*persistentHandle),
 		AuthSession: p,
 	}
 ```
 
-### Usign Simulator
+### Using Simulator
 
 If you down't want to run the tests on a real TPM, you can opt to use `swtpm` if its installed:
 
 ```bash
 rm -rf /tmp/myvtpm && mkdir /tmp/myvtpm
-sudo swtpm socket --tpmstate dir=/tmp/myvtpm --tpm2 --server type=tcp,port=2321 --ctrl type=tcp,port=2322 --flags not-need-init,startup-clear
+sudo swtpm_setup --tpmstate /tmp/myvtpm --tpm2 --create-ek-cert
+sudo swtpm socket --tpmstate dir=/tmp/myvtpm --tpm2 --server type=tcp,port=2321 --ctrl type=tcp,port=2322 --flags not-need-init,startup-clear --log level=2
 
 ## run any TPM command
 export TPM2TOOLS_TCTI="swtpm:port=2321"

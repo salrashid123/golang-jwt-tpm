@@ -26,18 +26,6 @@ import (
 
 /*
 Load a key using https://github.com/Foxboron/go-tpm-keyfiles
-
-$ openssl list --providers
-Providers:
-
-	default
-	  name: OpenSSL Default Provider
-	  version: 3.5.0
-	  status: active
-	tpm2
-	  name: TPM 2.0 Provider
-	  version: 1.2.0
-	  status: active
 */
 var (
 	tpmPath = flag.String("tpm-path", "127.0.0.1:2321", "Path to the TPM device (character device or a Unix socket).")
@@ -206,20 +194,9 @@ func main() {
 	)
 	log.Printf("     Signing PEM \n%s", string(akPubPEM))
 
-	rpub, err := tpm2.ReadPublic{
-		ObjectHandle: regenRSAKey.ObjectHandle,
-	}.Execute(rwr)
-	if err != nil {
-		log.Printf("ERROR:  could not get MarshalPKIXPublicKey: %v", err)
-		return
-	}
-
 	config := &tpmjwt.TPMConfig{
 		TPMDevice: rwc,
-		NamedHandle: tpm2.NamedHandle{
-			Handle: regenRSAKey.ObjectHandle,
-			Name:   rpub.Name,
-		},
+		Handle:    regenRSAKey.ObjectHandle,
 	}
 
 	keyctx, err := tpmjwt.NewTPMContext(ctx, config)
