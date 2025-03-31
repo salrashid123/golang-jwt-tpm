@@ -29,7 +29,7 @@ The following types are supported
 
 You need to first have an RSA or ECC key saved to a TPM and then specify its [go-tpm/tpm2.TPMHandle](https://pkg.go.dev/github.com/google/go-tpm@v0.9.0/tpm2#TPMHandle) with this library.
 
-In the following, the Key is referenced as a [persistent or transient handle](https://trustedcomputinggroup.org/wp-content/uploads/RegistryOfReservedTPM2HandlesAndLocalities_v1p1_pub.pdf) or as a PEM encoded ekyfile
+In the following, the Key is referenced as a [persistent or transient handle](https://trustedcomputinggroup.org/wp-content/uploads/RegistryOfReservedTPM2HandlesAndLocalities_v1p1_pub.pdf) or as a [PEM encoded TPM keyfile](https://www.hansenpartnership.com/draft-bottomley-tpm2-keys.html)
 
 Embedding a key to a TPM is out of scope of this repo but you can use [tpm2_tools](https://github.com/tpm2-software/tpm2-tools) as shown in the examples folder
 
@@ -43,6 +43,7 @@ import (
 	"github.com/google/go-tpm/tpm2"
 	"github.com/google/go-tpm/tpm2/transport"
 	"github.com/google/go-tpm/tpmutil"
+	keyfile "github.com/foxboron/go-tpm-keyfiles"
 )
 
 // initialize the TPM
@@ -50,9 +51,48 @@ rwc, err := tpm2.OpenTPM("/dev/tpmrm0")
 defer rwc.Close()
 rwr := transport.FromReadWriter(rwc)
 
+var keyHandle tpm2.TPMHandle
+
+// Load the key from either
+// 1. persistent handle
+keyHandle =  tpm2.TPMHandle(0x81008001)
+
+// or 
+
+// 2. PEM formatted TPMKey
+c, err := os.ReadFile("/path/to/tpmkey.pem")
+
+key, err := keyfile.Decode(c)
+
+primaryKey, err := tpm2.CreatePrimary{
+	PrimaryHandle: tpm2.AuthHandle{
+		Handle: tpm2.TPMHandle(key.Parent),
+		Auth:   tpm2.PasswordAuth(nil),
+	},
+	InPublic: tpm2.New2B(keyfile.ECCSRK_H2_Template),
+	}.Execute(rwr)
+
+regenKey, err := tpm2.Load{
+	ParentHandle: tpm2.AuthHandle{
+		Handle: primaryKey.ObjectHandle,
+		Name:   tpm2.TPM2BName(primaryKey.Name),
+		Auth:   tpm2.PasswordAuth(nil),
+	},
+	InPublic:  key.Pubkey,
+	InPrivate: key.Privkey,
+	}.Execute(rwr)
+
+keyHandle = regenKey.ObjectHandle
+
+// or
+
+// 3. relaod the entiere context chain:
+//    https://github.com/salrashid123/tpm2/tree/master/context_chain
+
+// now load and use the key
 config := &tpmjwt.TPMConfig{
 	TPMDevice: rwc,
-	Handle: tpm2.TPMHandle(0x81008001),
+	Handle: keyHandle,
 }
 
 keyctx, err := tpmjwt.NewTPMContext(ctx, config)
@@ -266,7 +306,8 @@ $ go run go_keyfile_compat/main.go --in private.pem
 
 ### Session Encryption
 
-If you want to enable [session encryption](https://github.com/salrashid123/tpm2/tree/master/tpm_encrypted_session), you need to supply an external key you know to be associated with a TPM (eg an Endorsement Key):
+If you want to enable [session encryption](https://github.com/salrashid123/tpm2/tree/master/tpm_encrypted_session), you need to supply an external key you know to be associated with a TPM (eg an `Endorsement Key` handle).
+ 
 
 ```golang
 	createEKCmd := tpm2.CreatePrimary{
@@ -275,17 +316,10 @@ If you want to enable [session encryption](https://github.com/salrashid123/tpm2/
 	}
 	createEKRsp, err := createEKCmd.Execute(rwr)
 
-	encryptionPub, err := createEKRsp.OutPublic.Contents()
-
-	rpub, err := tpm2.ReadPublic{
-		ObjectHandle: tpm2.TPMHandle(*persistentHandle),
-	}.Execute(rwr)
-
 	config := &tpmjwt.TPMConfig{
 		TPMDevice: rwc,
 		Handle: tpm2.TPMHandle(0x81008001),
 		EncryptionHandle: createEKRsp.ObjectHandle,
-		EncryptionPub:    encryptionPub,
 	}
 ```
 
@@ -360,10 +394,9 @@ If you want to set those up using tpm2_tools:
 ## RSA - password
 
 	printf '\x00\x00' > unique.dat
-	tpm2_createprimary -C o -G ecc  -g sha256  -c primary.ctx -a "fixedtpm|fixedparent|sensitivedataorigin|userwithauth|noda|restricted|decrypt" -u unique.dat
+	tpm2_createprimary -C o -G ecc  -g sha256  -c primary.ctx  -p pass1 -a "fixedtpm|fixedparent|sensitivedataorigin|userwithauth|noda|restricted|decrypt" -u unique.dat
 
-	tpm2_create -G rsa2048:rsassa:null -g sha256 -P pass1 -p pass2 -u key.pub -r key.priv -C primary.ctx
-	tpm2_getcap  handles-transient
+	tpm2_create -G rsa2048:rsassa:null -g sha256  -P pass1 -p pass2 -u key.pub -r key.priv -C primary.ctx
 	tpm2_load -C primary.ctx -P pass1 -u key.pub -r key.priv -c key.ctx
 	tpm2_evictcontrol -C o -c key.ctx 0x81008002
 

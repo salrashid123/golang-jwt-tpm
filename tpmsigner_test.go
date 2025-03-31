@@ -1142,8 +1142,6 @@ func TestTPMSessionEncryption(t *testing.T) {
 		}
 		_, _ = flushContextCmd.Execute(rwr)
 	}()
-	encryptionPub, err := createEKRsp.OutPublic.Contents()
-	require.NoError(t, err)
 
 	primaryKey, err := tpm2.CreatePrimary{
 		PrimaryHandle: tpm2.TPMRHOwner,
@@ -1187,7 +1185,6 @@ func TestTPMSessionEncryption(t *testing.T) {
 		TPMDevice:        tpmDevice,
 		Handle:           rsaKeyResponse.ObjectHandle,
 		EncryptionHandle: createEKRsp.ObjectHandle,
-		EncryptionPub:    encryptionPub,
 	}
 
 	keyctx, err := NewTPMContext(context.Background(), config)

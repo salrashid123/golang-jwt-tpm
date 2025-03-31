@@ -2,10 +2,7 @@ package main
 
 import (
 	"context"
-	"crypto"
-	"crypto/x509"
 	"encoding/base64"
-	"encoding/pem"
 	"flag"
 	"fmt"
 	"io"
@@ -63,26 +60,6 @@ func main() {
 
 	rwr := transport.FromReadWriter(rwc)
 
-	log.Printf("======= createPrimary ========")
-
-	primaryKey, err := tpm2.CreatePrimary{
-		PrimaryHandle: tpm2.AuthHandle{
-			Handle: tpm2.TPMRHOwner,
-			Auth:   tpm2.PasswordAuth(nil),
-		},
-		InPublic: tpm2.New2B(keyfile.ECCSRK_H2_Template),
-	}.Execute(rwr)
-	if err != nil {
-		log.Fatalf("can't create primary %v", err)
-	}
-
-	defer func() {
-		flushContextCmd := tpm2.FlushContext{
-			FlushHandle: primaryKey.ObjectHandle,
-		}
-		_, _ = flushContextCmd.Execute(rwr)
-	}()
-
 	log.Printf("======= reading key from file ========")
 	c, err := os.ReadFile(*in)
 	if err != nil {
@@ -93,7 +70,7 @@ func main() {
 		log.Fatalf("failed decoding key: %v", err)
 	}
 
-	primary, err := tpm2.CreatePrimary{
+	primaryKey, err := tpm2.CreatePrimary{
 		PrimaryHandle: tpm2.AuthHandle{
 			Handle: tpm2.TPMHandle(key.Parent),
 			Auth:   tpm2.PasswordAuth(nil),
@@ -106,15 +83,17 @@ func main() {
 
 	defer func() {
 		flushContextCmd := tpm2.FlushContext{
-			FlushHandle: primary.ObjectHandle,
+			FlushHandle: primaryKey.ObjectHandle,
 		}
 		_, _ = flushContextCmd.Execute(rwr)
 	}()
 
+	log.Printf("primaryKey Name %s\n", base64.StdEncoding.EncodeToString(primaryKey.Name.Buffer))
+
 	regenRSAKey, err := tpm2.Load{
 		ParentHandle: tpm2.AuthHandle{
-			Handle: primary.ObjectHandle,
-			Name:   tpm2.TPM2BName(primary.Name),
+			Handle: primaryKey.ObjectHandle,
+			Name:   tpm2.TPM2BName(primaryKey.Name),
 			Auth:   tpm2.PasswordAuth(nil),
 		},
 		InPublic:  key.Pubkey,
@@ -136,63 +115,8 @@ func main() {
 		Issuer:    "test",
 	}
 
-	var token *jwt.Token
-
-	defer func() {
-		flushContextCmd := tpm2.FlushContext{
-			FlushHandle: primaryKey.ObjectHandle,
-		}
-		_, _ = flushContextCmd.Execute(rwr)
-	}()
-
-	log.Printf("primaryKey Name %s\n", base64.StdEncoding.EncodeToString(primaryKey.Name.Buffer))
-
-	pub, err := tpm2.ReadPublic{
-		ObjectHandle: tpm2.TPMHandle(regenRSAKey.ObjectHandle),
-	}.Execute(rwr)
-	if err != nil {
-		log.Fatalf("error executing tpm2.ReadPublic %v", err)
-	}
-
-	outPub, err := pub.OutPublic.Contents()
-	if err != nil {
-		log.Fatalf("error reading public contexts %v", err)
-	}
-
-	var pubKey crypto.PublicKey
-
 	tpmjwt.SigningMethodTPMRS256.Override()
-	token = jwt.NewWithClaims(tpmjwt.SigningMethodTPMRS256, claims)
-
-	rsaDetail, err := outPub.Parameters.RSADetail()
-	if err != nil {
-		log.Fatalf("error reading rsa public %v", err)
-	}
-	rsaUnique, err := outPub.Unique.RSA()
-	if err != nil {
-		log.Fatalf("error reading rsa unique %v", err)
-	}
-
-	rsaPub, err := tpm2.RSAPub(rsaDetail, rsaUnique)
-	if err != nil {
-		log.Fatalf("Failed to get rsa public key: %v", err)
-	}
-
-	pubKey = rsaPub
-
-	akBytes, err := x509.MarshalPKIXPublicKey(pubKey)
-	if err != nil {
-		log.Printf("ERROR:  could not get MarshalPKIXPublicKey: %v", err)
-		return
-	}
-
-	akPubPEM := pem.EncodeToMemory(
-		&pem.Block{
-			Type:  "PUBLIC KEY",
-			Bytes: akBytes,
-		},
-	)
-	log.Printf("     Signing PEM \n%s", string(akPubPEM))
+	token := jwt.NewWithClaims(tpmjwt.SigningMethodTPMRS256, claims)
 
 	config := &tpmjwt.TPMConfig{
 		TPMDevice: rwc,

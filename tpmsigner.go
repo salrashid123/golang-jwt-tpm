@@ -29,8 +29,7 @@ type TPMConfig struct {
 	KeyID            string           // (optional) the TPM keyID (normally the key "Name")
 	publicKeyFromTPM crypto.PublicKey // the public key as read from KeyHandleFile, KeyHandleNV
 	name             tpm2.TPM2BName
-	EncryptionHandle tpm2.TPMHandle   // (optional) handle to use for transit encryption
-	EncryptionPub    *tpm2.TPMTPublic // (optional) public key to use for transit encryption
+	EncryptionHandle tpm2.TPMHandle // (optional) handle to use for transit encryption
 }
 
 type tpmConfigKey struct{}
@@ -204,8 +203,18 @@ func (s *SigningMethodTPM) Sign(signingString string, key interface{}) ([]byte, 
 
 	var sess tpm2.Session
 	//  check if we should use parameter encryption...if so, just use the EK for now
-	if config.EncryptionHandle != 0 && config.EncryptionPub != nil {
-		sess = tpm2.HMAC(tpm2.TPMAlgSHA256, 16, tpm2.AESEncryption(128, tpm2.EncryptIn), tpm2.Salted(config.EncryptionHandle, *config.EncryptionPub))
+	if config.EncryptionHandle != 0 {
+		encryptionPub, err := tpm2.ReadPublic{
+			ObjectHandle: config.EncryptionHandle,
+		}.Execute(rwr)
+		if err != nil {
+			return nil, fmt.Errorf("tpmjwt: failed to gEncryptionPublic Key contentents  %v", err)
+		}
+		ePubName, err := encryptionPub.OutPublic.Contents()
+		if err != nil {
+			return nil, fmt.Errorf("tpmjwt: failed to get EncryptionPublic Key contentents %v", err)
+		}
+		sess = tpm2.HMAC(tpm2.TPMAlgSHA256, 16, tpm2.AESEncryption(128, tpm2.EncryptIn), tpm2.Salted(config.EncryptionHandle, *ePubName))
 	} else {
 		sess = tpm2.HMAC(tpm2.TPMAlgSHA256, 16, tpm2.AESEncryption(128, tpm2.EncryptIn))
 	}
