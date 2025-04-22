@@ -35,6 +35,8 @@ Embedding a key to a TPM is out of scope of this repo but you can use [tpm2_tool
 
 Once the key is on a TPM (in this case, at handle `0x81008001`), usage is similar to:
 
+#### with PersistentHandle
+
 ```golang
 import (
 	"github.com/golang-jwt/jwt/v5"
@@ -43,7 +45,6 @@ import (
 	"github.com/google/go-tpm/tpm2"
 	"github.com/google/go-tpm/tpm2/transport"
 	"github.com/google/go-tpm/tpmutil"
-	keyfile "github.com/foxboron/go-tpm-keyfiles"
 )
 
 // initialize the TPM
@@ -57,9 +58,44 @@ var keyHandle tpm2.TPMHandle
 // 1. persistent handle
 keyHandle =  tpm2.TPMHandle(0x81008001)
 
-// or 
+config := &tpmjwt.TPMConfig{
+	TPMDevice: rwc,
+	Handle: keyHandle,
+}
 
-// 2. PEM formatted TPMKey
+keyctx, err := tpmjwt.NewTPMContext(ctx, config)
+
+claims := &jwt.RegisteredClaims{
+	ExpiresAt: &jwt.NumericDate{time.Now().Add(time.Minute * 1)},
+	Issuer:    "test",
+}
+
+tpmjwt.SigningMethodTPMRS256.Override()
+token := jwt.NewWithClaims(tpmjwt.SigningMethodTPMRS256, claims)
+tokenString, err := token.SignedString(keyctx)
+
+fmt.Printf("TOKEN: %s\n", tokenString)
+```
+
+#### with KeyFile
+
+```golang
+import (
+	"github.com/golang-jwt/jwt/v5"
+	tpmjwt "github.com/salrashid123/golang-jwt-tpm"
+
+	"github.com/google/go-tpm/tpm2"
+	"github.com/google/go-tpm/tpm2/transport"
+	"github.com/google/go-tpm/tpmutil"
+	keyfile "github.com/foxboron/go-tpm-keyfiles"
+)
+
+rwc, err := tpm2.OpenTPM("/dev/tpmrm0")
+defer rwc.Close()
+rwr := transport.FromReadWriter(rwc)
+
+var keyHandle tpm2.TPMHandle
+
 c, err := os.ReadFile("/path/to/tpmkey.pem")
 
 key, err := keyfile.Decode(c)
@@ -84,11 +120,6 @@ regenKey, err := tpm2.Load{
 
 keyHandle = regenKey.ObjectHandle
 
-// or
-
-// 3. relaod the entiere context chain:
-//    https://github.com/salrashid123/tpm2/tree/master/context_chain
-
 // now load and use the key
 config := &tpmjwt.TPMConfig{
 	TPMDevice: rwc,
@@ -108,6 +139,20 @@ tokenString, err := token.SignedString(keyctx)
 
 fmt.Printf("TOKEN: %s\n", tokenString)
 ```
+
+#### With ContextChain
+ 
+see [Reload context chain](https://github.com/salrashid123/tpm2/tree/master/context_chain)
+
+---
+
+#### Other JWT generators
+
+- [golang-jwt for post quantum cryptography](https://github.com/salrashid123/golang-jwt-pqc)
+- [golang-jwt for crypto.Signer](https://github.com/salrashid123/golang-jwt-signer)
+- [golang-jwt for PKCS11](https://github.com/salrashid123/golang-jwt-pkcs11)
+
+---
 
 ### Setup
 
