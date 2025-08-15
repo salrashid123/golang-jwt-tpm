@@ -133,7 +133,7 @@ func main() {
 			Hash:      tpm2.TPMAlgSHA256,
 			PCRSelect: tpm2.PCClientCompatible.PCRs(23),
 		},
-	})
+	}, tpm2.TPM2BDigest{Buffer: nil}, primaryKey.ObjectHandle)
 	if err != nil {
 		log.Fatalf("Error configuring PCR session: %v", err)
 	}

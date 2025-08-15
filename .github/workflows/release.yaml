@@ -15,6 +15,15 @@ jobs:
   test:
     runs-on: ubuntu-latest
     steps:
+
+      # - name: Install a swtpm
+      #   run: |
+      #     sudo apt-get update && sudo apt-get -y install swtpm swtpm-tools
+
+      # - name: run swtpmB
+      #   run: |
+      #     mkdir /tmp/myvtpm2 && swtpm_setup --tpmstate /tmp/myvtpm2 --tpm2 --create-ek-cert && swtpm socket --tpmstate dir=/tmp/myvtpm2 --tpm2 --server type=tcp,port=2341 --ctrl type=tcp,port=2342 --flags not-need-init,startup-clear &
+
       - name: Check out code
         uses: actions/checkout@v4
 

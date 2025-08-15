@@ -131,7 +131,7 @@ func run() {
 
 	log.Printf("primaryKey Name %s\n", base64.StdEncoding.EncodeToString(primaryKey.Name.Buffer))
 
-	se, err := tpmjwt.NewPolicyAuthValueAndDuplicateSelectSession(rwr, []byte(*keyPass), primaryKey.Name)
+	se, err := tpmjwt.NewPolicyAuthValueAndDuplicateSelectSession(rwr, []byte(*keyPass), primaryKey.Name, primaryKey.ObjectHandle)
 	if err != nil {
 		log.Fatalf("can'create session: %v", err)
 	}

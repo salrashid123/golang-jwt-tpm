@@ -138,7 +138,7 @@ func main() {
 	)
 	log.Printf("     Signing PEM \n%s", string(akPubPEM))
 
-	p, err := tpmjwt.NewPasswordSession(rwr, []byte(keyPass))
+	p, err := tpmjwt.NewPasswordSession(rwr, []byte(keyPass), primaryKey.ObjectHandle)
 	if err != nil {
 		log.Printf("ERROR:  could not get MarshalPKIXPublicKey: %v", err)
 		return
