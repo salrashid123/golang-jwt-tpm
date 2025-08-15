@@ -2,9 +2,6 @@ package tpmjwt
 
 import (
 	"context"
-	"encoding/hex"
-	"strconv"
-	"strings"
 	"testing"
 	"time"
 
@@ -659,7 +656,7 @@ func TestTPMPasswordPolicy(t *testing.T) {
 	}
 	token := jwt.NewWithClaims(SigningMethodTPMRS256, claims)
 
-	p, err := NewPasswordSession(rwr, []byte(keyPassword), primaryKey.ObjectHandle)
+	p, err := NewPasswordSession(rwr, []byte(keyPassword))
 	require.NoError(t, err)
 
 	config := &TPMConfig{
@@ -803,7 +800,7 @@ func TestTPMPasswordPolicyWrongPasswordFail(t *testing.T) {
 	}
 	token := jwt.NewWithClaims(SigningMethodTPMRS256, claims)
 
-	p, err := NewPasswordSession(rwr, []byte(wrongPassword), primaryKey.ObjectHandle)
+	p, err := NewPasswordSession(rwr, []byte(wrongPassword))
 	require.NoError(t, err)
 
 	config := &TPMConfig{
@@ -837,21 +834,7 @@ func TestTPMPolicyPCR(t *testing.T) {
 		_, _ = flushContextCmd.Execute(rwr)
 	}()
 
-	pcrValues := "23:0000000000000000000000000000000000000000000000000000000000000000"
-	pcrMap := make(map[uint][]byte)
-	for _, v := range strings.Split(pcrValues, ",") {
-		entry := strings.Split(v, ":")
-		if len(entry) == 2 {
-			uv, err := strconv.ParseUint(entry[0], 10, 32)
-			require.NoError(t, err)
-			hexEncodedPCR, err := hex.DecodeString(strings.ToLower(entry[1]))
-			require.NoError(t, err)
-			pcrMap[uint(uv)] = hexEncodedPCR
-		}
-	}
-
-	_, pcrList, pcrDigest, err := getPCRMap(tpm2.TPMAlgSHA256, pcrMap)
-	require.NoError(t, err)
+	pcr := 23
 
 	sess, cleanup, err := tpm2.PolicySession(rwr, tpm2.TPMAlgSHA256, 16, tpm2.Trial())
 	require.NoError(t, err)
@@ -859,12 +842,11 @@ func TestTPMPolicyPCR(t *testing.T) {
 
 	_, err = tpm2.PolicyPCR{
 		PolicySession: sess.Handle(),
-		PcrDigest:     tpm2.TPM2BDigest{Buffer: pcrDigest},
 		Pcrs: tpm2.TPMLPCRSelection{
 			PCRSelections: []tpm2.TPMSPCRSelection{
 				{
 					Hash:      tpm2.TPMAlgSHA256,
-					PCRSelect: tpm2.PCClientCompatible.PCRs(pcrList...),
+					PCRSelect: tpm2.PCClientCompatible.PCRs(uint(pcr)),
 				},
 			},
 		},
@@ -911,10 +893,9 @@ func TestTPMPolicyPCR(t *testing.T) {
 	p, err := NewPCRSession(rwr, []tpm2.TPMSPCRSelection{
 		{
 			Hash:      tpm2.TPMAlgSHA256,
-			PCRSelect: tpm2.PCClientCompatible.PCRs(pcrList...),
+			PCRSelect: tpm2.PCClientCompatible.PCRs(uint(pcr)),
 		},
-	}, tpm2.TPM2BDigest{Buffer: nil}, primaryKey.ObjectHandle)
-
+	})
 	config := &TPMConfig{
 		TPMDevice:   tpmDevice,
 		Handle:      rsaKeyResponse.ObjectHandle,
@@ -946,21 +927,7 @@ func TestTPMPolicyPCRExtendFail(t *testing.T) {
 		_, _ = flushContextCmd.Execute(rwr)
 	}()
 
-	pcrValues := "23:0000000000000000000000000000000000000000000000000000000000000000"
-	pcrMap := make(map[uint][]byte)
-	for _, v := range strings.Split(pcrValues, ",") {
-		entry := strings.Split(v, ":")
-		if len(entry) == 2 {
-			uv, err := strconv.ParseUint(entry[0], 10, 32)
-			require.NoError(t, err)
-			hexEncodedPCR, err := hex.DecodeString(strings.ToLower(entry[1]))
-			require.NoError(t, err)
-			pcrMap[uint(uv)] = hexEncodedPCR
-		}
-	}
-
-	_, pcrList, _, err := getPCRMap(tpm2.TPMAlgSHA256, pcrMap)
-	require.NoError(t, err)
+	pcr := 23
 
 	sess, cleanup, err := tpm2.PolicySession(rwr, tpm2.TPMAlgSHA256, 16, tpm2.Trial())
 	require.NoError(t, err)
@@ -972,7 +939,7 @@ func TestTPMPolicyPCRExtendFail(t *testing.T) {
 			PCRSelections: []tpm2.TPMSPCRSelection{
 				{
 					Hash:      tpm2.TPMAlgSHA256,
-					PCRSelect: tpm2.PCClientCompatible.PCRs(pcrList...),
+					PCRSelect: tpm2.PCClientCompatible.PCRs(uint(pcr)),
 				},
 			},
 		},
@@ -1020,9 +987,9 @@ func TestTPMPolicyPCRExtendFail(t *testing.T) {
 	p, err := NewPCRSession(rwr, []tpm2.TPMSPCRSelection{
 		{
 			Hash:      tpm2.TPMAlgSHA256,
-			PCRSelect: tpm2.PCClientCompatible.PCRs(pcrList...),
+			PCRSelect: tpm2.PCClientCompatible.PCRs(uint(pcr)),
 		},
-	}, tpm2.TPM2BDigest{Buffer: nil}, primaryKey.ObjectHandle)
+	})
 	require.NoError(t, err)
 	config := &TPMConfig{
 		TPMDevice:   tpmDevice,
@@ -1039,7 +1006,7 @@ func TestTPMPolicyPCRExtendFail(t *testing.T) {
 			PCRSelections: []tpm2.TPMSPCRSelection{
 				{
 					Hash:      tpm2.TPMAlgSHA256,
-					PCRSelect: tpm2.PCClientCompatible.PCRs(pcrList...),
+					PCRSelect: tpm2.PCClientCompatible.PCRs(uint(pcr)),
 				},
 			},
 		},
@@ -1048,7 +1015,7 @@ func TestTPMPolicyPCRExtendFail(t *testing.T) {
 
 	_, err = tpm2.PCRExtend{
 		PCRHandle: tpm2.AuthHandle{
-			Handle: tpm2.TPMHandle(pcrList[0]),
+			Handle: tpm2.TPMHandle(uint(pcr)),
 			Auth:   tpm2.PasswordAuth(nil),
 		},
 		Digests: tpm2.TPMLDigestValues{

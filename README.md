@@ -180,7 +180,6 @@ Create RSA key at handle `0x81008001`, RSA-PSS handle at `0x81008004`; ECC at `0
 	tpm2_createprimary -C o -G ecc  -g sha256  -c primary.ctx -a "fixedtpm|fixedparent|sensitivedataorigin|userwithauth|noda|restricted|decrypt" -u unique.dat
 
 	tpm2_create -G rsa2048:rsassa:null -g sha256 -u key.pub -r key.priv -C primary.ctx
-    tpm2_flushcontext -t && tpm2_flushcontext -s && tpm2_flushcontext -l
 
 	tpm2_load -C primary.ctx -u key.pub -r key.priv -c key.ctx
 	tpm2_evictcontrol -C o -c key.ctx 0x81008001
@@ -305,7 +304,7 @@ $ go run nopolicy/main.go --mode=rsa --persistentHandle=0x81008001 --tpm-path=/d
 
 
 
-## PSS
+## PS256
 $ go run nopolicy/main.go --mode=rsapss --persistentHandle=0x81008004 --tpm-path=/dev/tpmrm0
 
 	2024/05/30 11:27:10 ======= Init  ========
@@ -498,29 +497,12 @@ type MyPCRAndPolicyAuthValueSession struct {
 	rwr      transport.TPM
 	sel      []tpm2.TPMSPCRSelection
 	password []byte
-	encSession tpm2.Session
 }
 
 var _ Session = (*MyPCRAndPolicyAuthValueSession)(nil)
 
-func NewPCRAndPolicyAuthValueSession(rwr transport.TPM, sel []tpm2.TPMSPCRSelection, password []byte, , encryptionHandle tpm2.TPMHandle) (MyPCRAndPolicyAuthValueSession, error) {
-	var sess tpm2.Session
-	if encryptionHandle != 0 {
-		encryptionPub, err := tpm2.ReadPublic{
-			ObjectHandle: encryptionHandle,
-		}.Execute(rwr)
-		if err != nil {
-			return PolicyAuthValueDuplicateSelectSession{}, fmt.Errorf("tpmjwt: failed to get EncryptionPublic Key contentents  %v", err)
-		}
-		ePubName, err := encryptionPub.OutPublic.Contents()
-		if err != nil {
-			return PolicyAuthValueDuplicateSelectSession{}, fmt.Errorf("tpmjwt: failed to get EncryptionPublic Key contentents %v", err)
-		}
-		sess = tpm2.HMAC(tpm2.TPMAlgSHA256, 16, tpm2.AESEncryption(128, tpm2.EncryptIn), tpm2.Salted(encryptionHandle, *ePubName))
-	} else {
-		sess = tpm2.HMAC(tpm2.TPMAlgSHA256, 16, tpm2.AESEncryption(128, tpm2.EncryptIn))
-	}	
-	return MyPCRAndPolicyAuthValueSession{rwr, sel, password,sess}, nil
+func NewPCRAndPolicyAuthValueSession(rwr transport.TPM, sel []tpm2.TPMSPCRSelection, password []byte) (MyPCRAndPolicyAuthValueSession, error) {
+	return MyPCRAndPolicyAuthValueSession{rwr, sel, password}, nil
 }
 
 func (p MyPCRAndPolicyAuthValueSession) GetSession() (auth tpm2.Session, closer func() error, err error) {
@@ -554,7 +536,7 @@ func (p MyPCRAndPolicyAuthValueSession) GetSession() (auth tpm2.Session, closer 
 }
 ```
 
-which you can call using the ek as session encryption on policy calls as:
+which you can call as:
 
 ```golang
 	p, err := NewPCRAndPolicyAuthValueSession(rwr, []tpm2.TPMSPCRSelection{
@@ -562,7 +544,7 @@ which you can call using the ek as session encryption on policy calls as:
 			Hash:      tpm2.TPMAlgSHA256,
 			PCRSelect: tpm2.PCClientCompatible.PCRs(uint(*pcr)),
 		},
-	}, []byte("testpswd"),ek.ObjectHandle)
+	}, []byte("testpswd"))
 
 	config := &tpmjwt.TPMConfig{
 		TPMDevice: rwc,
@@ -577,8 +559,8 @@ If you down't want to run the tests on a real TPM, you can opt to use `swtpm` if
 
 ```bash
 rm -rf /tmp/myvtpm && mkdir /tmp/myvtpm
-swtpm_setup --tpmstate /tmp/myvtpm --tpm2 --create-ek-cert
-swtpm socket --tpmstate dir=/tmp/myvtpm --tpm2 --server type=tcp,port=2321 --ctrl type=tcp,port=2322 --flags not-need-init,startup-clear --log level=2
+sudo swtpm_setup --tpmstate /tmp/myvtpm --tpm2 --create-ek-cert
+sudo swtpm socket --tpmstate dir=/tmp/myvtpm --tpm2 --server type=tcp,port=2321 --ctrl type=tcp,port=2322 --flags not-need-init,startup-clear --log level=2
 
 ## run any TPM command
 export TPM2TOOLS_TCTI="swtpm:port=2321"
