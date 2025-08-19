@@ -22,10 +22,14 @@ import (
 )
 
 /*
-Load a key using https://github.com/Foxboron/go-tpm-keyfiles
+JWT signer with EK parent that is bound by policy duplicate_select and policy authvalue
+
+eg:
+
+	https://github.com/salrashid123/tpmcopy/tree/main?tab=readme-ov-file#rsa
 */
 var (
-	tpmPath = flag.String("tpm-path", "127.0.0.1:2341", "Path to the TPM device (character device or a Unix socket).")
+	tpmPath = flag.String("tpm-path", "127.0.0.1:2321", "Path to the TPM device (character device or a Unix socket).")
 	in      = flag.String("in", "/tmp/tpmkey.pem", "privateKey File")
 	keyPass = flag.String("keyPass", "bar", "passphrase for the key")
 )
@@ -131,7 +135,7 @@ func run() {
 
 	log.Printf("primaryKey Name %s\n", base64.StdEncoding.EncodeToString(primaryKey.Name.Buffer))
 
-	se, err := tpmjwt.NewPolicyAuthValueAndDuplicateSelectSession(rwr, []byte(*keyPass), primaryKey.Name)
+	se, err := tpmjwt.NewPolicyAuthValueAndDuplicateSelectSession(rwr, []byte(*keyPass), primaryKey.Name, primaryKey.ObjectHandle)
 	if err != nil {
 		log.Fatalf("can'create session: %v", err)
 	}

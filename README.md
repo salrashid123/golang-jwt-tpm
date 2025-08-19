@@ -180,6 +180,7 @@ Create RSA key at handle `0x81008001`, RSA-PSS handle at `0x81008004`; ECC at `0
 	tpm2_createprimary -C o -G ecc  -g sha256  -c primary.ctx -a "fixedtpm|fixedparent|sensitivedataorigin|userwithauth|noda|restricted|decrypt" -u unique.dat
 
 	tpm2_create -G rsa2048:rsassa:null -g sha256 -u key.pub -r key.priv -C primary.ctx
+    tpm2_flushcontext -t && tpm2_flushcontext -s && tpm2_flushcontext -l
 
 	tpm2_load -C primary.ctx -u key.pub -r key.priv -c key.ctx
 	tpm2_evictcontrol -C o -c key.ctx 0x81008001
@@ -189,6 +190,7 @@ Create RSA key at handle `0x81008001`, RSA-PSS handle at `0x81008004`; ECC at `0
 	tpm2_createprimary -C o -G ecc  -g sha256  -c primary.ctx -a "fixedtpm|fixedparent|sensitivedataorigin|userwithauth|noda|restricted|decrypt" -u unique.dat
 
 	tpm2_create -G rsa2048:rsapss:null -g sha256 -u key.pub -r key.priv -C primary.ctx  --format=pem --output=rsapss_public.pem
+	tpm2_flushcontext -t && tpm2_flushcontext -s && tpm2_flushcontext -l
 
 	tpm2_load -C primary.ctx -u key.pub -r key.priv -c key.ctx
 	tpm2_evictcontrol -C o -c key.ctx 0x81008004
@@ -198,6 +200,7 @@ Create RSA key at handle `0x81008001`, RSA-PSS handle at `0x81008004`; ECC at `0
 	tpm2_createprimary -C o -G ecc  -g sha256  -c primary.ctx -a "fixedtpm|fixedparent|sensitivedataorigin|userwithauth|noda|restricted|decrypt" -u unique.dat
 
 	tpm2_create -G ecc:ecdsa  -g sha256  -u key.pub -r key.priv -C primary.ctx  --format=pem --output=ecc_public.pem
+	tpm2_flushcontext -t && tpm2_flushcontext -s && tpm2_flushcontext -l
 
 	tpm2_load -C primary.ctx -u key.pub -r key.priv -c key.ctx
 	tpm2_evictcontrol -C o -c key.ctx 0x81008005    
@@ -212,6 +215,7 @@ If you would rather generate a TPM based PEM file that is compatible with openss
 	tpm2_createprimary -C o -G ecc  -g sha256  -c primary.ctx -a "fixedtpm|fixedparent|sensitivedataorigin|userwithauth|noda|restricted|decrypt" -u unique.dat
 
 	tpm2_create -G rsa2048:rsassa:null -g sha256 -u key.pub -r key.priv -C primary.ctx
+	tpm2_flushcontext -t && tpm2_flushcontext -s && tpm2_flushcontext -l
 
 	tpm2_load -C primary.ctx -u key.pub -r key.priv -c key.ctx
 
@@ -222,6 +226,7 @@ If you would rather generate a TPM based PEM file that is compatible with openss
 
 ```bash
 # export TPM2OPENSSL_TCTI="device:/dev/tpmrm0"
+# export TPM2OPENSSL_TCTI="swtpm:port=2321"
 
 openssl genpkey --provider tpm2 --provider default -algorithm RSA -pkeyopt rsa_keygen_bits:2048 \
       -pkeyopt rsa_keygen_pubexp:65537 -out private.pem
@@ -378,6 +383,26 @@ If you want to enable [session encryption](https://github.com/salrashid123/tpm2/
 	}
 ```
 
+Alternatively, if you are using an session, you an encrypt that traffic:
+
+```golang
+	createEKCmd := tpm2.CreatePrimary{
+		PrimaryHandle: tpm2.TPMRHEndorsement,
+		InPublic:      tpm2.New2B(tpm2.RSAEKTemplate),
+	}
+	createEKRsp, err := createEKCmd.Execute(rwr)
+
+	p, err := tpmjwt.NewPasswordSession(rwr, []byte(keyPass), createEKCmd.ObjectHandle)
+
+	config := &tpmjwt.TPMConfig{
+		TPMDevice:   rwc,
+		Handle:      tpm2.TPMHandle(*persistentHandle),
+		AuthSession: p,
+	}
+```
+
+if both a policy with encryption and the `EncryptionHandle` is provided, the setting in the policy takes priority
+
 Once you do that, the bus traffic is also encrypted
 
 ### Imported Key
@@ -452,6 +477,7 @@ If you want to set those up using tpm2_tools:
 	tpm2_createprimary -C o -G ecc  -g sha256  -c primary.ctx  -p pass1 -a "fixedtpm|fixedparent|sensitivedataorigin|userwithauth|noda|restricted|decrypt" -u unique.dat
 
 	tpm2_create -G rsa2048:rsassa:null -g sha256  -P pass1 -p pass2 -u key.pub -r key.priv -C primary.ctx
+	tpm2_flushcontext -t && tpm2_flushcontext -s && tpm2_flushcontext -l
 	tpm2_load -C primary.ctx -P pass1 -u key.pub -r key.priv -c key.ctx
 	tpm2_evictcontrol -C o -c key.ctx 0x81008002
 
@@ -464,9 +490,11 @@ If you want to set those up using tpm2_tools:
 
 	printf '\x00\x00' > unique.dat
 	tpm2_createprimary -C o -G ecc  -g sha256  -c primary.ctx -a "fixedtpm|fixedparent|sensitivedataorigin|userwithauth|noda|restricted|decrypt" -u unique.dat
-
+	tpm2_flushcontext -t && tpm2_flushcontext -s && tpm2_flushcontext -l
 	tpm2_create -G rsa2048:rsassa:null -g sha256 -u key.pub -r key.priv -C primary.ctx  -L policy.dat
+
 	tpm2_load -C primary.ctx -u key.pub -r key.priv -c key.ctx
+	tpm2_flushcontext -t && tpm2_flushcontext -s && tpm2_flushcontext -l	
 	tpm2_evictcontrol -C o -c key.ctx 0x81008003
 ```
 
@@ -522,14 +550,14 @@ func (p MyPCRAndPolicyAuthValueSession) GetSession() (auth tpm2.Session, closer 
 		},
 	}.Execute(p.rwr)
 	if err != nil {
-		return nil, nil, err
+		return nil, closer, err
 	}
 
 	_, err = tpm2.PolicyAuthValue{
 		PolicySession: sess.Handle(),
 	}.Execute(p.rwr)
 	if err != nil {
-		return nil, nil, err
+		return nil, closer, err
 	}
 
 	return sess, closer, nil
@@ -559,8 +587,8 @@ If you down't want to run the tests on a real TPM, you can opt to use `swtpm` if
 
 ```bash
 rm -rf /tmp/myvtpm && mkdir /tmp/myvtpm
-sudo swtpm_setup --tpmstate /tmp/myvtpm --tpm2 --create-ek-cert
-sudo swtpm socket --tpmstate dir=/tmp/myvtpm --tpm2 --server type=tcp,port=2321 --ctrl type=tcp,port=2322 --flags not-need-init,startup-clear --log level=2
+swtpm_setup --tpmstate /tmp/myvtpm --tpm2 --create-ek-cert
+swtpm socket --tpmstate dir=/tmp/myvtpm --tpm2 --server type=tcp,port=2321 --ctrl type=tcp,port=2322 --flags not-need-init,startup-clear --log level=2
 
 ## run any TPM command
 export TPM2TOOLS_TCTI="swtpm:port=2321"
