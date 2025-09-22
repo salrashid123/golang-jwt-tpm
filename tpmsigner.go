@@ -43,9 +43,18 @@ func (k *TPMConfig) GetPublicKey() crypto.PublicKey {
 
 var (
 	SigningMethodTPMRS256 *SigningMethodTPM
+	SigningMethodTPMRS384 *SigningMethodTPM
+	SigningMethodTPMRS512 *SigningMethodTPM
+
 	SigningMethodTPMPS256 *SigningMethodTPM
+	SigningMethodTPMPS384 *SigningMethodTPM
+	SigningMethodTPMPS512 *SigningMethodTPM
+
 	SigningMethodTPMES256 *SigningMethodTPM
-	errMissingConfig      = errors.New("tpmjwt: missing configuration in provided context")
+	SigningMethodTPMES384 *SigningMethodTPM
+	SigningMethodTPMES512 *SigningMethodTPM
+
+	errMissingConfig = errors.New("tpmjwt: missing configuration in provided context")
 )
 
 type SigningMethodTPM struct {
@@ -141,6 +150,26 @@ func init() {
 		return SigningMethodTPMRS256
 	})
 
+	// RS384
+	SigningMethodTPMRS384 = &SigningMethodTPM{
+		"TPMRS384",
+		jwt.SigningMethodRS384,
+		crypto.SHA384,
+	}
+	jwt.RegisterSigningMethod(SigningMethodTPMRS384.Alg(), func() jwt.SigningMethod {
+		return SigningMethodTPMRS384
+	})
+
+	// RS512
+	SigningMethodTPMRS512 = &SigningMethodTPM{
+		"TPMRS512",
+		jwt.SigningMethodRS512,
+		crypto.SHA512,
+	}
+	jwt.RegisterSigningMethod(SigningMethodTPMRS512.Alg(), func() jwt.SigningMethod {
+		return SigningMethodTPMRS512
+	})
+
 	// PS256
 	SigningMethodTPMPS256 = &SigningMethodTPM{
 		"TPMPS256",
@@ -149,6 +178,26 @@ func init() {
 	}
 	jwt.RegisterSigningMethod(SigningMethodTPMPS256.Alg(), func() jwt.SigningMethod {
 		return SigningMethodTPMPS256
+	})
+
+	// PS384
+	SigningMethodTPMPS384 = &SigningMethodTPM{
+		"TPMPS384",
+		jwt.SigningMethodPS384,
+		crypto.SHA384,
+	}
+	jwt.RegisterSigningMethod(SigningMethodTPMPS384.Alg(), func() jwt.SigningMethod {
+		return SigningMethodTPMPS384
+	})
+
+	// PS512
+	SigningMethodTPMPS512 = &SigningMethodTPM{
+		"TPMPS512",
+		jwt.SigningMethodPS512,
+		crypto.SHA512,
+	}
+	jwt.RegisterSigningMethod(SigningMethodTPMPS512.Alg(), func() jwt.SigningMethod {
+		return SigningMethodTPMPS512
 	})
 
 	// ES256
@@ -160,6 +209,27 @@ func init() {
 	jwt.RegisterSigningMethod(SigningMethodTPMES256.Alg(), func() jwt.SigningMethod {
 		return SigningMethodTPMES256
 	})
+
+	// ES384
+	SigningMethodTPMES384 = &SigningMethodTPM{
+		"TPMES384",
+		jwt.SigningMethodES384,
+		crypto.SHA384,
+	}
+	jwt.RegisterSigningMethod(SigningMethodTPMES384.Alg(), func() jwt.SigningMethod {
+		return SigningMethodTPMES384
+	})
+
+	// PS512
+	SigningMethodTPMES512 = &SigningMethodTPM{
+		"TPMES512",
+		jwt.SigningMethodES512,
+		crypto.SHA512,
+	}
+	jwt.RegisterSigningMethod(SigningMethodTPMES512.Alg(), func() jwt.SigningMethod {
+		return SigningMethodTPMES512
+	})
+
 }
 
 // Alg will return the JWT header algorithm identifier this method is configured for.
@@ -234,6 +304,19 @@ func (s *SigningMethodTPM) Sign(signingString string, key interface{}) ([]byte, 
 
 	data := []byte(signingString)
 
+	var tpmHalg tpm2.TPMAlgID
+
+	switch s.hasher {
+	case crypto.SHA256:
+		tpmHalg = tpm2.TPMAlgSHA256
+	case crypto.SHA384:
+		tpmHalg = tpm2.TPMAlgSHA384
+	case crypto.SHA512:
+		tpmHalg = tpm2.TPMAlgSHA512
+	default:
+		return nil, fmt.Errorf("tpmjwt: unexpected hash algorithm hash %v", s.hasher)
+	}
+
 	var hsh []byte
 	var val []byte
 	if len(data) > maxDigestBuffer {
@@ -247,7 +330,7 @@ func (s *SigningMethodTPM) Sign(signingString string, key interface{}) ([]byte, 
 			Auth: tpm2.TPM2BAuth{
 				Buffer: pss,
 			},
-			HashAlg: tpm2.TPMAlgSHA256,
+			HashAlg: tpmHalg,
 		}.Execute(rwr)
 		if err != nil {
 			return nil, fmt.Errorf("tpmjwt: failed to generate hash from TPM HashSequenceStart %v", err)
@@ -291,7 +374,7 @@ func (s *SigningMethodTPM) Sign(signingString string, key interface{}) ([]byte, 
 	} else {
 		h, err := tpm2.Hash{
 			Hierarchy: tpm2.TPMRHEndorsement,
-			HashAlg:   tpm2.TPMAlgSHA256,
+			HashAlg:   tpmHalg,
 			Data: tpm2.TPM2BMaxBuffer{
 				Buffer: []byte(signingString),
 			},
@@ -322,7 +405,7 @@ func (s *SigningMethodTPM) Sign(signingString string, key interface{}) ([]byte, 
 	}
 	switch pub := config.publicKeyFromTPM.(type) {
 	case *rsa.PublicKey:
-		if s.Alg() == "RS256" {
+		if s.Alg() == "RS256" || s.Alg() == "RS384" || s.Alg() == "RS512" {
 			rspSign, err := tpm2.Sign{
 				KeyHandle: tpm2.AuthHandle{
 					Handle: config.Handle,
@@ -337,7 +420,7 @@ func (s *SigningMethodTPM) Sign(signingString string, key interface{}) ([]byte, 
 					Details: tpm2.NewTPMUSigScheme(
 						tpm2.TPMAlgRSASSA,
 						&tpm2.TPMSSchemeHash{
-							HashAlg: tpm2.TPMAlgSHA256,
+							HashAlg: tpmHalg,
 						},
 					),
 				},
@@ -359,7 +442,7 @@ func (s *SigningMethodTPM) Sign(signingString string, key interface{}) ([]byte, 
 			}
 			tsig = rsig.Sig.Buffer
 
-		} else if s.Alg() == "PS256" {
+		} else if s.Alg() == "PS256" || s.Alg() == "PS384" || s.Alg() == "PS512" {
 			rspSign, err := tpm2.Sign{
 				KeyHandle: tpm2.AuthHandle{
 					Handle: config.Handle,
@@ -374,7 +457,7 @@ func (s *SigningMethodTPM) Sign(signingString string, key interface{}) ([]byte, 
 					Details: tpm2.NewTPMUSigScheme(
 						tpm2.TPMAlgRSAPSS,
 						&tpm2.TPMSSchemeHash{
-							HashAlg: tpm2.TPMAlgSHA256,
+							HashAlg: tpmHalg,
 						},
 					),
 				},
@@ -401,7 +484,7 @@ func (s *SigningMethodTPM) Sign(signingString string, key interface{}) ([]byte, 
 		}
 
 	case *ecdsa.PublicKey:
-		if s.Alg() == "ES256" {
+		if s.Alg() == "ES256" || s.Alg() == "ES384" || s.Alg() == "ES512" {
 			rspSign, err := tpm2.Sign{
 				KeyHandle: tpm2.AuthHandle{
 					Handle: config.Handle,
@@ -416,7 +499,7 @@ func (s *SigningMethodTPM) Sign(signingString string, key interface{}) ([]byte, 
 					Details: tpm2.NewTPMUSigScheme(
 						tpm2.TPMAlgECDSA,
 						&tpm2.TPMSSchemeHash{
-							HashAlg: tpm2.TPMAlgSHA256,
+							HashAlg: tpmHalg,
 						},
 					),
 				},

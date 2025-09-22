@@ -21,9 +21,16 @@ This repo assumes the verifier of the JWT has already established that the RSA k
 The following types are supported
 
 * `RS256`
-* `PS256`
-* `ES256`
+* `RS384`
+* `RS512`
 
+* `PS256`
+* `PS384`
+* `PS512`
+
+* `ES256`
+* `ES384`
+* `ES512`
 
 ### Usage
 
@@ -180,7 +187,7 @@ Create RSA key at handle `0x81008001`, RSA-PSS handle at `0x81008004`; ECC at `0
 	tpm2_createprimary -C o -G ecc  -g sha256  -c primary.ctx -a "fixedtpm|fixedparent|sensitivedataorigin|userwithauth|noda|restricted|decrypt" -u unique.dat
 
 	tpm2_create -G rsa2048:rsassa:null -g sha256 -u key.pub -r key.priv -C primary.ctx
-    tpm2_flushcontext -t && tpm2_flushcontext -s && tpm2_flushcontext -l
+	tpm2_flushcontext -t && tpm2_flushcontext -s && tpm2_flushcontext -l
 
 	tpm2_load -C primary.ctx -u key.pub -r key.priv -c key.ctx
 	tpm2_evictcontrol -C o -c key.ctx 0x81008001
