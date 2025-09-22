@@ -20,17 +20,11 @@ This repo assumes the verifier of the JWT has already established that the RSA k
 
 The following types are supported
 
-* `RS256`
-* `RS384`
-* `RS512`
+* `RS256` `RS384` `RS512`
 
-* `PS256`
-* `PS384`
-* `PS512`
+* `PS256` `PS384` `PS512`
 
-* `ES256`
-* `ES384`
-* `ES512`
+* `ES256` `ES384` `ES512`
 
 ### Usage
 
