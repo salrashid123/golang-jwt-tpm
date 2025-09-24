@@ -4,15 +4,13 @@ This is just an extension for [go-jwt](https://github.com/golang-jwt/jwt#extensi
 
 You can use this library to sign and verify a JWT using the standard `go-jwt` library semantics.
 
-Using a TPM to sign or encrypt anything has some very specific applications which i will not go into it much (if your'e reading this, you probably already know).  If a JWT is signed by a TPM and if the key that was used was setup in a specific format, the verifier can be sure that the JWT was signed by that TPM.
+Using a TPM to sign or encrypt anything has some very specific applications which i will not go into it much (if your'e reading this, you probably already know).  If a JWT is signed by a TPM and if the key that was used was setup in a specific protocol, the verifier can be sure that the JWT was signed by that TPM.
 
 For example, you can use a TPM to generate an RSA key with specifications that "this key was generated on a TPM with characteristics such that it cannot get exportable outside the TPM"..very necessarily, the RSA private key will never exist anywhere else other than in that TPM.
 
 How a you trust that a specific `RSA` or `ECC` key happens to be from a given TPM with a given specification set is a rather complicated protocol that is also not covered in this repo.  The specific trust protocol is called [TPM Remote Attestation](https://tpm2-software.github.io/tpm2-tss/getting-started/2019/12/18/Remote-Attestation.html).
 
-Note that Google Cloud Confidential VMs already comes built in with an `x509` Attestation Key (AK).  This simplifies the need to do full remote Attestation for GCP instances (eg, you sign a JWT and verify that that signed JWT must have originated on a specific GCE VM (see the examples folder in  [gcp-vtpm-ek-ak](https://github.com/salrashid123/gcp-vtpm-ek-ak))
-
-This repo assumes the verifier of the JWT has already established that the RSA key that is being used to sign the JWT
+This repo assumes the verifier of the JWT has already established that the RSA|ECC key that is being used to sign the JWT
 
 >> this repo is not supported by google
 
@@ -25,6 +23,16 @@ The following types are supported
 * `PS256` `PS384` `PS512`
 
 * `ES256` `ES384` `ES512`
+
+---
+
+#### Other JWT generators
+
+- [golang-jwt for crypto.Signer](https://github.com/salrashid123/golang-jwt-signer)
+- [golang-jwt for PKCS11](https://github.com/salrashid123/golang-jwt-pkcs11)
+- [golang-jwt for post quantum cryptography](https://github.com/salrashid123/golang-jwt-pqc)
+
+---
 
 ### Usage
 
@@ -155,13 +163,6 @@ you can initialize the parent for the EK and then custom policy handlers.  For e
  
 see [Reload context chain](https://github.com/salrashid123/tpm2/tree/master/context_chain)
 
----
-
-#### Other JWT generators
-
-- [golang-jwt for post quantum cryptography](https://github.com/salrashid123/golang-jwt-pqc)
-- [golang-jwt for crypto.Signer](https://github.com/salrashid123/golang-jwt-signer)
-- [golang-jwt for PKCS11](https://github.com/salrashid123/golang-jwt-pkcs11)
 
 ---
 
@@ -440,7 +441,7 @@ eg, for Password Policy:
 		ObjectHandle: tpm2.TPMHandle(*persistentHandle),
 	}.Execute(rwr)
 
-	p, err := tpmjwt.NewPasswordSession(rwr, []byte(keyPass))
+	p, err := tpmjwt.NewPasswordAuthSession(rwr, []byte(keyPass, 0))
 	config := &tpmjwt.TPMConfig{
 		TPMDevice: rwc,
 		Handle: tpm2.TPMHandle(*persistentHandle),
@@ -460,7 +461,7 @@ For PCR Policy:
 			Hash:      tpm2.TPMAlgSHA256,
 			PCRSelect: tpm2.PCClientCompatible.PCRs(23),
 		},
-	})
+	}, tpm2.TPM2BDigest{Buffer: nil}, 0)
 
 	config := &tpmjwt.TPMConfig{
 		TPMDevice: rwc,
@@ -526,12 +527,13 @@ type MyPCRAndPolicyAuthValueSession struct {
 	rwr      transport.TPM
 	sel      []tpm2.TPMSPCRSelection
 	password []byte
+	encryptionHandle tpm2.TPMHandle	
 }
 
 var _ Session = (*MyPCRAndPolicyAuthValueSession)(nil)
 
-func NewPCRAndPolicyAuthValueSession(rwr transport.TPM, sel []tpm2.TPMSPCRSelection, password []byte) (MyPCRAndPolicyAuthValueSession, error) {
-	return MyPCRAndPolicyAuthValueSession{rwr, sel, password}, nil
+func NewPCRAndPolicyAuthValueSession(rwr transport.TPM, sel []tpm2.TPMSPCRSelection, password []byte, , encryptionHandle tpm2.TPMHandle) (MyPCRAndPolicyAuthValueSession, error) {
+	return MyPCRAndPolicyAuthValueSession{rwr, sel, password, encryptionHandle}, nil
 }
 
 func (p MyPCRAndPolicyAuthValueSession) GetSession() (auth tpm2.Session, closer func() error, err error) {
@@ -573,7 +575,7 @@ which you can call as:
 			Hash:      tpm2.TPMAlgSHA256,
 			PCRSelect: tpm2.PCClientCompatible.PCRs(uint(*pcr)),
 		},
-	}, []byte("testpswd"))
+	}, []byte("testpswd"), 0)
 
 	config := &tpmjwt.TPMConfig{
 		TPMDevice: rwc,

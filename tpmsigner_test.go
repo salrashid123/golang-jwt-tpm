@@ -1012,7 +1012,7 @@ func TestTPMPolicyPCR(t *testing.T) {
 			Hash:      tpm2.TPMAlgSHA256,
 			PCRSelect: tpm2.PCClientCompatible.PCRs(pcrList...),
 		},
-	}, tpm2.TPM2BDigest{Buffer: nil}, primaryKey.ObjectHandle)
+	}, tpm2.TPM2BDigest{Buffer: nil}, 0)
 	require.NoError(t, err)
 
 	config := &TPMConfig{
