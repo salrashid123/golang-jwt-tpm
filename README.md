@@ -149,20 +149,9 @@ tokenString, err := token.SignedString(keyctx)
 fmt.Printf("TOKEN: %s\n", tokenString)
 ```
 
-#### With EKParent
-
-If the TPM key you are using to sign is transferred from another system, using either 
-
-* [tpm2_duplicate](https://github.com/salrashid123/tpm2/tree/master/tpm2_duplicate)
-* [tpmcopy: Transfer RSA|ECC|AES|HMAC key to a remote Trusted Platform Module (TPM)](https://github.com/salrashid123/tpmcopy)
-
-you can initialize the parent for the EK and then custom policy handlers.  For example, see [example/go_keyfile_ekparent/](example/go_keyfile_ekparent/) folder which uses a reference to the  `tpmcopy` sample set to use a duplicated key with passphrase.  
-
-
 #### With ContextChain
  
 see [Reload context chain](https://github.com/salrashid123/tpm2/tree/master/context_chain)
-
 
 ---
 
@@ -422,6 +411,16 @@ using `tpm2_tools`:
 	tpm2_load -C primary.ctx -u key.pub -r key.prv -c key.ctx
 	tpm2_evictcontrol -C o -c key.ctx 0x81008006
 ```
+
+### Transferred Key
+
+If the TPM key you are using to sign is transferred from another system, using either 
+
+* [tpm2_duplicate](https://github.com/salrashid123/tpm2/tree/master/tpm2_duplicate)
+* [tpmcopy: Transfer RSA|ECC|AES|HMAC key to a remote Trusted Platform Module (TPM)](https://github.com/salrashid123/tpmcopy)
+
+you can initialize the parent for the EK and then custom policy handlers.  For example, see [example/go_keyfile_ekparent/](example/go_keyfile_ekparent/) folder which uses a reference to the  `tpmcopy` sample set to use a duplicated key with passphrase.  
+
 
 You can also see how to load the entire chain here [Loading TPM key chains](https://github.com/salrashid123/tpm2/context_chain)
 
