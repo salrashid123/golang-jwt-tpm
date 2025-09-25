@@ -3,16 +3,21 @@ package tpmjwt
 import (
 	"context"
 	"encoding/hex"
+	"net"
 	"strconv"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
-	"github.com/google/go-tpm-tools/simulator"
+
 	"github.com/google/go-tpm/tpm2"
 	"github.com/google/go-tpm/tpm2/transport"
 	"github.com/stretchr/testify/require"
+)
+
+const (
+	swTPMPathB = "127.0.0.1:2321"
 )
 
 var (
@@ -160,7 +165,8 @@ func getTemplateWithCurve(alg tpm2.TPMAlgID, hashAlg tpm2.TPMAlgID, crv tpm2.TPM
 }
 
 func TestTPMRSA(t *testing.T) {
-	tpmDevice, err := simulator.Get()
+	//tpmDevice, err := simulator.Get()
+	tpmDevice, err := net.Dial("tcp", swTPMPathB)
 	require.NoError(t, err)
 	defer tpmDevice.Close()
 
@@ -250,7 +256,8 @@ func TestTPMRSA(t *testing.T) {
 }
 
 func TestTPMRSAAK(t *testing.T) {
-	tpmDevice, err := simulator.Get()
+	//tpmDevice, err := simulator.Get()
+	tpmDevice, err := net.Dial("tcp", swTPMPathB)
 	require.NoError(t, err)
 	defer tpmDevice.Close()
 
@@ -354,7 +361,8 @@ func TestTPMRSAAK(t *testing.T) {
 }
 
 func TestTPMRSAFail(t *testing.T) {
-	tpmDevice, err := simulator.Get()
+	//tpmDevice, err := simulator.Get()
+	tpmDevice, err := net.Dial("tcp", swTPMPathB)
 	require.NoError(t, err)
 	defer tpmDevice.Close()
 
@@ -420,7 +428,7 @@ func TestTPMRSAFail(t *testing.T) {
 
 	defer func() {
 		flushContextCmd := tpm2.FlushContext{
-			FlushHandle: primaryKey.ObjectHandle,
+			FlushHandle: rsaKeyResponse2.ObjectHandle,
 		}
 		_, _ = flushContextCmd.Execute(rwr)
 	}()
@@ -440,7 +448,8 @@ func TestTPMRSAFail(t *testing.T) {
 }
 
 func TestTPMClaim(t *testing.T) {
-	tpmDevice, err := simulator.Get()
+	//tpmDevice, err := simulator.Get()
+	tpmDevice, err := net.Dial("tcp", swTPMPathB)
 	require.NoError(t, err)
 	defer tpmDevice.Close()
 
@@ -475,6 +484,11 @@ func TestTPMClaim(t *testing.T) {
 		}
 		_, _ = flushContextCmd.Execute(rwr)
 	}()
+
+	flushContextCmd := tpm2.FlushContext{
+		FlushHandle: primaryKey.ObjectHandle,
+	}
+	_, _ = flushContextCmd.Execute(rwr)
 	SigningMethodTPMRS256.Override()
 
 	zeroBytes := make([]byte, 2048)
@@ -519,7 +533,8 @@ func TestTPMClaim(t *testing.T) {
 }
 
 func TestTPMRSAPSS(t *testing.T) {
-	tpmDevice, err := simulator.Get()
+	//tpmDevice, err := simulator.Get()
+	tpmDevice, err := net.Dial("tcp", swTPMPathB)
 	require.NoError(t, err)
 	defer tpmDevice.Close()
 
@@ -609,7 +624,8 @@ func TestTPMRSAPSS(t *testing.T) {
 }
 
 func TestTPMECC(t *testing.T) {
-	tpmDevice, err := simulator.Get()
+	//tpmDevice, err := simulator.Get()
+	tpmDevice, err := net.Dial("tcp", swTPMPathB)
 	require.NoError(t, err)
 	defer tpmDevice.Close()
 
@@ -700,7 +716,8 @@ func TestTPMECC(t *testing.T) {
 }
 
 func TestTPMPasswordAuth(t *testing.T) {
-	tpmDevice, err := simulator.Get()
+	//tpmDevice, err := simulator.Get()
+	tpmDevice, err := net.Dial("tcp", swTPMPathB)
 	require.NoError(t, err)
 	defer tpmDevice.Close()
 
@@ -779,7 +796,8 @@ func TestTPMPasswordAuth(t *testing.T) {
 }
 
 func TestTPMPasswordNoPolicyFail(t *testing.T) {
-	tpmDevice, err := simulator.Get()
+	//tpmDevice, err := simulator.Get()
+	tpmDevice, err := net.Dial("tcp", swTPMPathB)
 	require.NoError(t, err)
 	defer tpmDevice.Close()
 
@@ -847,7 +865,8 @@ func TestTPMPasswordNoPolicyFail(t *testing.T) {
 }
 
 func TestTPMPasswordPolicyWrongPasswordFail(t *testing.T) {
-	tpmDevice, err := simulator.Get()
+	//tpmDevice, err := simulator.Get()
+	tpmDevice, err := net.Dial("tcp", swTPMPathB)
 	require.NoError(t, err)
 	defer tpmDevice.Close()
 
@@ -919,7 +938,8 @@ func TestTPMPasswordPolicyWrongPasswordFail(t *testing.T) {
 }
 
 func TestTPMPolicyPCR(t *testing.T) {
-	tpmDevice, err := simulator.Get()
+	//tpmDevice, err := simulator.Get()
+	tpmDevice, err := net.Dial("tcp", swTPMPathB)
 	require.NoError(t, err)
 	defer tpmDevice.Close()
 
@@ -1029,7 +1049,8 @@ func TestTPMPolicyPCR(t *testing.T) {
 }
 
 func TestTPMPolicyPCRExtendFail(t *testing.T) {
-	tpmDevice, err := simulator.Get()
+	//tpmDevice, err := simulator.Get()
+	tpmDevice, err := net.Dial("tcp", swTPMPathB)
 	require.NoError(t, err)
 	defer tpmDevice.Close()
 
@@ -1169,7 +1190,8 @@ func TestTPMPolicyPCRExtendFail(t *testing.T) {
 }
 
 func TestTPMPolicyPCRNoSessionFail(t *testing.T) {
-	tpmDevice, err := simulator.GetWithFixedSeedInsecure(123456789)
+	//tpmDevice, err := simulator.Get()
+	tpmDevice, err := net.Dial("tcp", swTPMPathB)
 	require.NoError(t, err)
 	defer tpmDevice.Close()
 
@@ -1257,24 +1279,12 @@ func TestTPMPolicyPCRNoSessionFail(t *testing.T) {
 }
 
 func TestTPMSessionEncryption(t *testing.T) {
-	tpmDevice, err := simulator.Get()
+	//tpmDevice, err := simulator.Get()
+	tpmDevice, err := net.Dial("tcp", swTPMPathB)
 	require.NoError(t, err)
 	defer tpmDevice.Close()
 
 	rwr := transport.FromReadWriter(tpmDevice)
-
-	createEKCmd := tpm2.CreatePrimary{
-		PrimaryHandle: tpm2.TPMRHEndorsement,
-		InPublic:      tpm2.New2B(tpm2.RSAEKTemplate),
-	}
-	createEKRsp, err := createEKCmd.Execute(rwr)
-	require.NoError(t, err)
-	defer func() {
-		flushContextCmd := tpm2.FlushContext{
-			FlushHandle: createEKRsp.ObjectHandle,
-		}
-		_, _ = flushContextCmd.Execute(rwr)
-	}()
 
 	primaryKey, err := tpm2.CreatePrimary{
 		PrimaryHandle: tpm2.TPMRHOwner,
@@ -1303,6 +1313,23 @@ func TestTPMSessionEncryption(t *testing.T) {
 	defer func() {
 		flushContextCmd := tpm2.FlushContext{
 			FlushHandle: rsaKeyResponse.ObjectHandle,
+		}
+		_, _ = flushContextCmd.Execute(rwr)
+	}()
+	flushContextCmd := tpm2.FlushContext{
+		FlushHandle: primaryKey.ObjectHandle,
+	}
+	_, _ = flushContextCmd.Execute(rwr)
+
+	createEKCmd := tpm2.CreatePrimary{
+		PrimaryHandle: tpm2.TPMRHEndorsement,
+		InPublic:      tpm2.New2B(tpm2.RSAEKTemplate),
+	}
+	createEKRsp, err := createEKCmd.Execute(rwr)
+	require.NoError(t, err)
+	defer func() {
+		flushContextCmd := tpm2.FlushContext{
+			FlushHandle: createEKRsp.ObjectHandle,
 		}
 		_, _ = flushContextCmd.Execute(rwr)
 	}()
@@ -1339,7 +1366,8 @@ func TestTPMSessionEncryption(t *testing.T) {
 }
 
 func TestTPMRSANameHandle(t *testing.T) {
-	tpmDevice, err := simulator.Get()
+	//tpmDevice, err := simulator.Get()
+	tpmDevice, err := net.Dial("tcp", swTPMPathB)
 	require.NoError(t, err)
 	defer tpmDevice.Close()
 
