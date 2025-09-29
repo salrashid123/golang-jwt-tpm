@@ -295,7 +295,6 @@ func TestTPMRSAAK(t *testing.T) {
 			UserWithAuth:        true,
 			Restricted:          true,
 			SignEncrypt:         true,
-			NoDA:                true,
 		},
 		Parameters: tpm2.NewTPMUPublicParms(
 			tpm2.TPMAlgRSA,
