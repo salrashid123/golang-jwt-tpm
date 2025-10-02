@@ -441,3 +441,56 @@ func getPCRMap(algo tpm2.TPMAlgID, pcrMap map[uint][]byte) (map[uint][]byte, []u
 
 	return pcrMap, pcrs, hsh.Sum(nil), nil
 }
+
+type PolicySecretSession struct {
+	rwr              transport.TPM
+	authHandle       tpm2.AuthHandle
+	encryptionHandle tpm2.TPMHandle
+}
+
+var _ Session = (*PolicySecretSession)(nil)
+
+func NewPolicySecretSession(rwr transport.TPM, authHandle tpm2.AuthHandle, encryptionHandle tpm2.TPMHandle) (PolicySecretSession, error) {
+	return PolicySecretSession{rwr, authHandle, encryptionHandle}, nil
+}
+
+func (p PolicySecretSession) GetSession() (auth tpm2.Session, closer func() error, err error) {
+	var ePubName *tpm2.TPMTPublic
+	if p.encryptionHandle != 0 {
+		encryptionPub, err := tpm2.ReadPublic{
+			ObjectHandle: p.encryptionHandle,
+		}.Execute(p.rwr)
+		if err != nil {
+			return nil, nil, err
+		}
+		ePubName, err = encryptionPub.OutPublic.Contents()
+		if err != nil {
+			return nil, nil, err
+		}
+	}
+
+	var pcr_sess tpm2.Session
+	var pcr_cleanup func() error
+
+	if p.encryptionHandle != 0 {
+		pcr_sess, pcr_cleanup, err = tpm2.PolicySession(p.rwr, tpm2.TPMAlgSHA256, 16, tpm2.AESEncryption(128, tpm2.EncryptIn), tpm2.Salted(p.encryptionHandle, *ePubName))
+		if err != nil {
+			return nil, nil, err
+		}
+	} else {
+		pcr_sess, pcr_cleanup, err = tpm2.PolicySession(p.rwr, tpm2.TPMAlgSHA256, 16)
+		if err != nil {
+			return nil, nil, err
+		}
+	}
+
+	_, err = tpm2.PolicySecret{
+		PolicySession: pcr_sess.Handle(),
+		AuthHandle:    p.authHandle,
+	}.Execute(p.rwr)
+	if err != nil {
+		return nil, pcr_cleanup, err
+	}
+
+	return pcr_sess, pcr_cleanup, nil
+}
