@@ -1,11 +1,13 @@
 package tpmjwt
 
 import (
+	"bytes"
 	"context"
 	"crypto"
 	"crypto/ecdsa"
 	"crypto/rand"
 	"crypto/rsa"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
@@ -53,6 +55,10 @@ var (
 	SigningMethodTPMES256 *SigningMethodTPM
 	SigningMethodTPMES384 *SigningMethodTPM
 	SigningMethodTPMES512 *SigningMethodTPM
+
+	SigningMethodTPMHS256 *SigningMethodTPM
+	SigningMethodTPMHS384 *SigningMethodTPM
+	SigningMethodTPMHS512 *SigningMethodTPM
 
 	errMissingConfig = errors.New("tpmjwt: missing configuration in provided context")
 )
@@ -125,6 +131,8 @@ func NewTPMContext(parent context.Context, val *TPMConfig) (context.Context, err
 			Y:     big.NewInt(0).SetBytes(eccUnique.Y.Buffer),
 		}
 		keyPub = pubKey
+	case tpm2.TPMAlgKeyedHash:
+		//return context.WithValue(parent, tpmConfigKey{}, val), nil
 	default:
 		return nil, fmt.Errorf("tpmjwt: unsupported Algorithm %v", outPub.Type)
 	}
@@ -230,6 +238,36 @@ func init() {
 		return SigningMethodTPMES512
 	})
 
+	// HS256
+	SigningMethodTPMHS256 = &SigningMethodTPM{
+		"TPMHS256",
+		jwt.SigningMethodHS256,
+		crypto.SHA256,
+	}
+	jwt.RegisterSigningMethod(SigningMethodTPMHS256.Alg(), func() jwt.SigningMethod {
+		return SigningMethodTPMHS256
+	})
+
+	// HS384
+	SigningMethodTPMHS384 = &SigningMethodTPM{
+		"TPMHS384",
+		jwt.SigningMethodHS384,
+		crypto.SHA384,
+	}
+	jwt.RegisterSigningMethod(SigningMethodTPMHS384.Alg(), func() jwt.SigningMethod {
+		return SigningMethodTPMHS384
+	})
+
+	// HS512
+	SigningMethodTPMHS512 = &SigningMethodTPM{
+		"TPMHS512",
+		jwt.SigningMethodHS512,
+		crypto.SHA512,
+	}
+	jwt.RegisterSigningMethod(SigningMethodTPMHS512.Alg(), func() jwt.SigningMethod {
+		return SigningMethodTPMHS512
+	})
+
 }
 
 // Alg will return the JWT header algorithm identifier this method is configured for.
@@ -273,11 +311,11 @@ func (s *SigningMethodTPM) Sign(signingString string, key interface{}) ([]byte, 
 			ObjectHandle: config.EncryptionHandle,
 		}.Execute(rwr)
 		if err != nil {
-			return nil, fmt.Errorf("tpmjwt: failed to gEncryptionPublic Key contentents  %v", err)
+			return nil, fmt.Errorf("tpmjwt: failed to get Encryption ReadPublic Key contents  %v", err)
 		}
 		ePubName, err := encryptionPub.OutPublic.Contents()
 		if err != nil {
-			return nil, fmt.Errorf("tpmjwt: failed to get EncryptionPublic Key contentents %v", err)
+			return nil, fmt.Errorf("tpmjwt: failed to get EncryptionPublic Key contents %v", err)
 		}
 		sess = append(sess, tpm2.HMAC(tpm2.TPMAlgSHA256, 16, tpm2.AESEncryption(128, tpm2.EncryptIn), tpm2.Salted(config.EncryptionHandle, *ePubName)))
 	} else {
@@ -403,6 +441,60 @@ func (s *SigningMethodTPM) Sign(signingString string, key interface{}) ([]byte, 
 	} else {
 		se = tpm2.PasswordAuth(nil)
 	}
+
+	// if the key type is hmac,
+	if s.Alg() == "HS256" || s.Alg() == "HS384" || s.Alg() == "HS512" {
+
+		pss := make([]byte, 32)
+		_, err := rand.Read(pss)
+		if err != nil {
+			return nil, fmt.Errorf("tpmjwt: failed to generate random for hash %v", err)
+		}
+
+		objAuth := &tpm2.TPM2BAuth{
+			Buffer: pss,
+		}
+
+		pub, err := tpm2.ReadPublic{
+			ObjectHandle: config.Handle,
+		}.Execute(rwr)
+		if err != nil {
+			return nil, fmt.Errorf("tpmjwt: error getting public %v", err)
+		}
+
+		pb, err := pub.OutPublic.Contents()
+		if err != nil {
+			return nil, fmt.Errorf("tpmjwt: error getting public contents %v", err)
+		}
+
+		hsmaprams, err := pb.Parameters.KeyedHashDetail()
+		if err != nil {
+			return nil, fmt.Errorf("tpmjwt: error KeyedHashDetail params %v", err)
+		}
+
+		h, err := hsmaprams.Scheme.Details.HMAC()
+		if err != nil {
+			return nil, fmt.Errorf("tpmjwt: error getting hash %v", err)
+		}
+
+		if tpmHalg != h.HashAlg {
+			return nil, fmt.Errorf("tpmjwt: hey hmac mismatched with requested type got [%v] expected [%v]", h.HashAlg, tpmHalg)
+		}
+
+		nh := tpm2.NamedHandle{
+			Handle: config.Handle,
+			Name:   pub.Name,
+		}
+
+		hmacBytes, err := hmac(rwr, config.EncryptionHandle, data, nh, *objAuth, se, sess)
+		if err != nil {
+			return nil, fmt.Errorf("tpmjwt: can't hmac: %v", err)
+		}
+		return hmacBytes, nil
+	}
+
+	// otherwise its rsa or ecc
+
 	switch pub := config.publicKeyFromTPM.(type) {
 	case *rsa.PublicKey:
 		if s.Alg() == "RS256" || s.Alg() == "RS384" || s.Alg() == "RS512" {
@@ -534,10 +626,197 @@ func (s *SigningMethodTPM) Sign(signingString string, key interface{}) ([]byte, 
 
 func TPMVerfiyKeyfunc(ctx context.Context, config *TPMConfig) (jwt.Keyfunc, error) {
 	return func(token *jwt.Token) (interface{}, error) {
+		if config.publicKeyFromTPM == nil {
+			return ctx, nil
+		}
 		return config.publicKeyFromTPM, nil
 	}, nil
 }
 
 func (s *SigningMethodTPM) Verify(signingString string, signature []byte, key interface{}) error {
+	// if the key type is hmac,
+	if s.Alg() == "HS256" || s.Alg() == "HS384" || s.Alg() == "HS512" {
+		var ctx context.Context
+
+		switch k := key.(type) {
+		case context.Context:
+			ctx = k
+		default:
+			return jwt.ErrInvalidKey
+		}
+		config, ok := TPMFromContext(ctx)
+		if !ok {
+			return fmt.Errorf("tpmjwt: unsupported public key %v", ctx)
+		}
+		rwr := transport.FromReadWriter(config.TPMDevice)
+
+		var sess []tpm2.Session
+		//  check if we should use parameter encryption...if so, just use the EK for now
+		if config.EncryptionHandle != 0 {
+			encryptionPub, err := tpm2.ReadPublic{
+				ObjectHandle: config.EncryptionHandle,
+			}.Execute(rwr)
+			if err != nil {
+				return fmt.Errorf("tpmjwt: failed to get Encryption ReadPublic Key contents  %v", err)
+			}
+			ePubName, err := encryptionPub.OutPublic.Contents()
+			if err != nil {
+				return fmt.Errorf("tpmjwt: failed to get EncryptionPublic Key contents %v", err)
+			}
+			sess = append(sess, tpm2.HMAC(tpm2.TPMAlgSHA256, 16, tpm2.AESEncryption(128, tpm2.EncryptIn), tpm2.Salted(config.EncryptionHandle, *ePubName)))
+		} else {
+			sess = append(sess, tpm2.HMAC(tpm2.TPMAlgSHA256, 16, tpm2.AESEncryption(128, tpm2.EncryptIn)))
+		}
+
+		var se tpm2.Session
+		if config.AuthSession != nil {
+			var closer func() error
+			var err error
+			se, closer, err = config.AuthSession.GetSession()
+			if err != nil {
+				return fmt.Errorf("tpmjwt:  error getting session %s", err)
+			}
+			defer closer()
+			// if the authsession carries encryption, use that
+			if se.IsDecryption() {
+				sess = nil
+			}
+		} else {
+			se = tpm2.PasswordAuth(nil)
+		}
+
+		pss := make([]byte, 32)
+		_, err := rand.Read(pss)
+		if err != nil {
+			return fmt.Errorf("tpmjwt: failed to generate random for hash %v", err)
+		}
+
+		objAuth := &tpm2.TPM2BAuth{
+			Buffer: pss,
+		}
+
+		pub, err := tpm2.ReadPublic{
+			ObjectHandle: config.Handle,
+		}.Execute(rwr)
+		if err != nil {
+			return fmt.Errorf("tpmjwt: error getting public %v", err)
+		}
+
+		pb, err := pub.OutPublic.Contents()
+		if err != nil {
+			return fmt.Errorf("tpmjwt: error getting public contents %v", err)
+		}
+
+		hsmaprams, err := pb.Parameters.KeyedHashDetail()
+		if err != nil {
+			return fmt.Errorf("tpmjwt: error KeyedHashDetail params %v", err)
+		}
+
+		h, err := hsmaprams.Scheme.Details.HMAC()
+		if err != nil {
+			return fmt.Errorf("tpmjwt: error getting hash %v", err)
+		}
+
+		var tpmHalg tpm2.TPMAlgID
+
+		switch s.hasher {
+		case crypto.SHA256:
+			tpmHalg = tpm2.TPMAlgSHA256
+		case crypto.SHA384:
+			tpmHalg = tpm2.TPMAlgSHA384
+		case crypto.SHA512:
+			tpmHalg = tpm2.TPMAlgSHA512
+		default:
+			return fmt.Errorf("tpmjwt: unexpected hash algorithm hash %v", s.hasher)
+		}
+
+		if tpmHalg != h.HashAlg {
+			return fmt.Errorf("tpmjwt: hey hmac mismatched with requested type got [%v] expected [%v]", h.HashAlg, tpmHalg)
+		}
+
+		nh := tpm2.NamedHandle{
+			Handle: config.Handle,
+			Name:   pub.Name,
+		}
+
+		hmacBytes, err := hmac(rwr, config.EncryptionHandle, []byte(signingString), nh, *objAuth, se, sess)
+		if err != nil {
+			return fmt.Errorf("tpmjwt: can't hmac: %v", err)
+		}
+
+		if !bytes.Equal(hmacBytes, signature) {
+			return fmt.Errorf("tpmjwt: error verifying hmac expected [%s], got [%s]\n", hex.EncodeToString(signature), hex.EncodeToString(hmacBytes))
+		}
+		return nil
+	}
+
 	return s.override.Verify(signingString, []byte(signature), key)
+}
+
+func hmac(rwr transport.TPM, encryptionHandle tpm2.TPMHandle, data []byte, objNamedHandle tpm2.NamedHandle, objAuth tpm2.TPM2BAuth, sess tpm2.Session, rsess []tpm2.Session) ([]byte, error) {
+
+	// max buffer has to be atleast 1024, either use this floor or get it from the TPM itself
+	maxDigestBuffer := 1024
+
+	// getRsp, err := tpm2.GetCapability{
+	// 	Capability:    tpm2.TPMCapTPMProperties,
+	// 	Property:      uint32(tpm2.TPMPTInputBuffer),
+	// 	PropertyCount: 1,
+	// }.Execute(rwr)
+	// if err != nil {
+	// 	return nil, fmt.Errorf("tpmjwt: failed to run capability %v", err)
+	// }
+
+	// tp, err := getRsp.CapabilityData.Data.TPMProperties()
+	// if err != nil {
+	// 	return nil, fmt.Errorf("tpmjwt: failed to get capability %v", err)
+	// }
+	// maxDigestBuffer = int(tp.TPMProperty[0].Value)
+
+	rspHS, err := tpm2.HmacStart{
+		Handle: tpm2.AuthHandle{
+			Handle: objNamedHandle.Handle,
+			Name:   objNamedHandle.Name,
+			Auth:   sess,
+		},
+		Auth: objAuth,
+		//HashAlg: tpm2.TPMAlgSHA256,
+	}.Execute(rwr, rsess...)
+	if err != nil {
+		return nil, err
+	}
+
+	authHandle := tpm2.AuthHandle{
+		Name:   objNamedHandle.Name,
+		Handle: rspHS.SequenceHandle,
+		Auth:   tpm2.PasswordAuth(objAuth.Buffer),
+	}
+	for len(data) > maxDigestBuffer {
+		sequenceUpdate := tpm2.SequenceUpdate{
+			SequenceHandle: authHandle,
+			Buffer: tpm2.TPM2BMaxBuffer{
+				Buffer: data[:maxDigestBuffer],
+			},
+		}
+		_, err = sequenceUpdate.Execute(rwr, rsess...)
+		if err != nil {
+			return nil, err
+		}
+		data = data[maxDigestBuffer:]
+	}
+
+	sequenceComplete := tpm2.SequenceComplete{
+		SequenceHandle: authHandle,
+		Buffer: tpm2.TPM2BMaxBuffer{
+			Buffer: data,
+		},
+		Hierarchy: tpm2.TPMRHOwner,
+	}
+
+	rspSC, err := sequenceComplete.Execute(rwr, rsess...)
+	if err != nil {
+		return nil, err
+	}
+	return rspSC.Result.Buffer, nil
+
 }

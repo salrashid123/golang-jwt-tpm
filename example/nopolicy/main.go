@@ -17,7 +17,6 @@ import (
 	"time"
 
 	jwt "github.com/golang-jwt/jwt/v5"
-	"github.com/google/go-tpm-tools/simulator"
 	"github.com/google/go-tpm/tpm2"
 	"github.com/google/go-tpm/tpm2/transport"
 	"github.com/google/go-tpm/tpmutil"
@@ -27,7 +26,7 @@ import (
 var (
 	tpmPath          = flag.String("tpm-path", "127.0.0.1:2321", "Path to the TPM device (character device or a Unix socket).")
 	persistentHandle = flag.Uint("persistentHandle", 0x81008001, "Handle value")
-	mode             = flag.String("mode", "rsa", "which test to run: rsa, rsapss or ecc")
+	mode             = flag.String("mode", "rsa", "which test to run: rsa, rsapss, ecc")
 )
 
 var TPMDEVICES = []string{"/dev/tpm0", "/dev/tpmrm0"}
@@ -35,8 +34,6 @@ var TPMDEVICES = []string{"/dev/tpm0", "/dev/tpmrm0"}
 func OpenTPM(path string) (io.ReadWriteCloser, error) {
 	if slices.Contains(TPMDEVICES, path) {
 		return tpmutil.OpenTPM(path)
-	} else if path == "simulator" {
-		return simulator.GetWithFixedSeedInsecure(1073741825)
 	} else {
 		return net.Dial("tcp", path)
 	}
@@ -161,24 +158,14 @@ func main() {
 			Y:     big.NewInt(0).SetBytes(ecUnique.Y.Buffer),
 		}
 
+	case "hmac":
+		tpmjwt.SigningMethodTPMHS256.Override()
+		token = jwt.NewWithClaims(tpmjwt.SigningMethodTPMHS256, claims)
+
 	default:
 		log.Printf(" unsupported mode %s", *mode)
 		return
 	}
-
-	akBytes, err := x509.MarshalPKIXPublicKey(pubKey)
-	if err != nil {
-		log.Printf("ERROR:  could not get MarshalPKIXPublicKey: %v", err)
-		return
-	}
-
-	akPubPEM := pem.EncodeToMemory(
-		&pem.Block{
-			Type:  "PUBLIC KEY",
-			Bytes: akBytes,
-		},
-	)
-	log.Printf("     Signing PEM \n%s", string(akPubPEM))
 
 	config := &tpmjwt.TPMConfig{
 		TPMDevice: rwc,
@@ -200,18 +187,48 @@ func main() {
 	fmt.Printf("TOKEN: %s\n", tokenString)
 
 	// verify with TPM based publicKey
-	keyFunc, err := tpmjwt.TPMVerfiyKeyfunc(ctx, config)
-	if err != nil {
-		log.Fatalf("could not get keyFunc: %v", err)
+	if *mode == "hmac" {
+		keyFunc, err := tpmjwt.TPMVerfiyKeyfunc(keyctx, config)
+		if err != nil {
+			log.Fatalf("could not get keyFunc: %v", err)
+		}
+
+		vtoken, err := jwt.Parse(tokenString, keyFunc)
+		if err != nil {
+			log.Fatalf("Error verifying token %v", err)
+		}
+		if vtoken.Valid {
+			log.Println("     verified with TPM PublicKey")
+		}
+		return
+	} else {
+		keyFunc, err := tpmjwt.TPMVerfiyKeyfunc(context.Background(), config)
+		if err != nil {
+			log.Fatalf("could not get keyFunc: %v", err)
+		}
+
+		vtoken, err := jwt.Parse(tokenString, keyFunc)
+		if err != nil {
+			log.Fatalf("Error verifying token %v", err)
+		}
+		if vtoken.Valid {
+			log.Println("     verified with TPM PublicKey")
+		}
 	}
 
-	vtoken, err := jwt.Parse(tokenString, keyFunc)
+	akBytes, err := x509.MarshalPKIXPublicKey(pubKey)
 	if err != nil {
-		log.Fatalf("Error verifying token %v", err)
+		log.Printf("ERROR:  could not get MarshalPKIXPublicKey: %v", err)
+		return
 	}
-	if vtoken.Valid {
-		log.Println("     verified with TPM PublicKey")
-	}
+
+	akPubPEM := pem.EncodeToMemory(
+		&pem.Block{
+			Type:  "PUBLIC KEY",
+			Bytes: akBytes,
+		},
+	)
+	log.Printf("     Signing PEM \n%s", string(akPubPEM))
 
 	// verify with provided RSAPublic key
 	pubKeyr := config.GetPublicKey()

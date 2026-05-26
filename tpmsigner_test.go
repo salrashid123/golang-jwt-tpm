@@ -98,7 +98,7 @@ func getTemplateWithHash(alg tpm2.TPMAlgID, hashAlg tpm2.TPMAlgID) tpm2.TPMTPubl
 	case tpm2.TPMAlgRSA:
 		ret = tpm2.TPMTPublic{
 			Type:    tpm2.TPMAlgRSA,
-			NameAlg: hashAlg,
+			NameAlg: tpm2.TPMAlgSHA256,
 			ObjectAttributes: tpm2.TPMAObject{
 				SignEncrypt:         true,
 				FixedTPM:            true,
@@ -132,7 +132,7 @@ func getTemplateWithHash(alg tpm2.TPMAlgID, hashAlg tpm2.TPMAlgID) tpm2.TPMTPubl
 	case tpm2.TPMAlgRSAPSS:
 		ret = tpm2.TPMTPublic{
 			Type:    tpm2.TPMAlgRSA,
-			NameAlg: hashAlg,
+			NameAlg: tpm2.TPMAlgSHA256,
 			ObjectAttributes: tpm2.TPMAObject{
 				SignEncrypt:         true,
 				FixedTPM:            true,
@@ -162,6 +162,29 @@ func getTemplateWithHash(alg tpm2.TPMAlgID, hashAlg tpm2.TPMAlgID) tpm2.TPMTPubl
 					Buffer: make([]byte, 256),
 				},
 			),
+		}
+	case tpm2.TPMAlgKeyedHash:
+		ret = tpm2.TPMTPublic{
+			Type:    tpm2.TPMAlgKeyedHash,
+			NameAlg: tpm2.TPMAlgSHA256,
+			ObjectAttributes: tpm2.TPMAObject{
+				SignEncrypt:         true,
+				FixedTPM:            true,
+				FixedParent:         true,
+				SensitiveDataOrigin: true,
+				UserWithAuth:        true,
+			},
+			AuthPolicy: tpm2.TPM2BDigest{},
+			Parameters: tpm2.NewTPMUPublicParms(tpm2.TPMAlgKeyedHash,
+				&tpm2.TPMSKeyedHashParms{
+					Scheme: tpm2.TPMTKeyedHashScheme{
+						Scheme: tpm2.TPMAlgHMAC,
+						Details: tpm2.NewTPMUSchemeKeyedHash(tpm2.TPMAlgHMAC,
+							&tpm2.TPMSSchemeHMAC{
+								HashAlg: hashAlg,
+							}),
+					},
+				}),
 		}
 	}
 	return ret
@@ -1529,5 +1552,96 @@ func TestTPMRSARestricted(t *testing.T) {
 	require.NoError(t, err)
 
 	require.True(t, vtoken.Valid)
+
+}
+
+func TestTPMHMAC(t *testing.T) {
+	//tpmDevice, err := simulator.Get()
+	tpmDevice, err := net.Dial("tcp", swTPMPathB)
+	require.NoError(t, err)
+	defer tpmDevice.Close()
+
+	rwr := transport.FromReadWriter(tpmDevice)
+	primaryKey, err := tpm2.CreatePrimary{
+		PrimaryHandle: tpm2.TPMRHOwner,
+		InPublic:      tpm2.New2B(tpm2.RSASRKTemplate),
+	}.Execute(rwr)
+	require.NoError(t, err)
+	defer func() {
+		flushContextCmd := tpm2.FlushContext{
+			FlushHandle: primaryKey.ObjectHandle,
+		}
+		_, _ = flushContextCmd.Execute(rwr)
+	}()
+
+	tests := []struct {
+		name string
+		hash tpm2.TPMAlgID
+	}{
+		{"TPMAlgSHA256", tpm2.TPMAlgSHA256},
+		{"TPMAlgSHA384", tpm2.TPMAlgSHA384},
+		{"TPMAlgSHA512", tpm2.TPMAlgSHA512},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			tmpl := getTemplateWithHash(tpm2.TPMAlgKeyedHash, tc.hash)
+			rsaKeyResponse, err := tpm2.CreateLoaded{
+				ParentHandle: tpm2.AuthHandle{
+					Handle: primaryKey.ObjectHandle,
+					Name:   primaryKey.Name,
+					Auth:   tpm2.PasswordAuth(nil),
+				},
+				InPublic: tpm2.New2BTemplate(&tmpl),
+			}.Execute(rwr)
+			require.NoError(t, err)
+
+			defer func() {
+				flushContextCmd := tpm2.FlushContext{
+					FlushHandle: rsaKeyResponse.ObjectHandle,
+				}
+				_, _ = flushContextCmd.Execute(rwr)
+			}()
+
+			issuer := "test"
+			claims := &jwt.RegisteredClaims{
+				ExpiresAt: &jwt.NumericDate{time.Now().Add(time.Minute * 1)},
+				Issuer:    issuer,
+			}
+			var token *jwt.Token
+
+			switch tc.hash {
+			case tpm2.TPMAlgSHA256:
+				SigningMethodTPMHS256.Override()
+				token = jwt.NewWithClaims(SigningMethodTPMHS256, claims)
+
+			case tpm2.TPMAlgSHA384:
+				SigningMethodTPMHS384.Override()
+				token = jwt.NewWithClaims(SigningMethodTPMHS384, claims)
+
+			case tpm2.TPMAlgSHA512:
+				SigningMethodTPMHS512.Override()
+				token = jwt.NewWithClaims(SigningMethodTPMHS512, claims)
+			}
+
+			config := &TPMConfig{
+				TPMDevice: tpmDevice,
+				Handle:    rsaKeyResponse.ObjectHandle,
+			}
+			keyctx, err := NewTPMContext(context.Background(), config)
+			require.NoError(t, err)
+
+			tokenString, err := token.SignedString(keyctx)
+			require.NoError(t, err)
+
+			// verify with TPM based publicKey
+			keyFunc, err := TPMVerfiyKeyfunc(keyctx, config)
+			require.NoError(t, err)
+
+			vtoken, err := jwt.Parse(tokenString, keyFunc)
+			require.NoError(t, err)
+
+			require.True(t, vtoken.Valid)
+		})
+	}
 
 }

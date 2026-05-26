@@ -14,6 +14,8 @@ The following types are supported
 
 * `ES256` `ES384` `ES512`
 
+* `HS256` `HS384` `HS512`
+
 ---
 
 #### Other JWT generators
@@ -188,7 +190,19 @@ Create RSA key at handle `0x81008001`, RSA-PSS handle at `0x81008004`; ECC at `0
 	tpm2_flushcontext -t && tpm2_flushcontext -s && tpm2_flushcontext -l
 
 	tpm2_load -C primary.ctx -u key.pub -r key.priv -c key.ctx
-	tpm2_evictcontrol -C o -c key.ctx 0x81008005    
+	tpm2_evictcontrol -C o -c key.ctx 0x81008005
+
+## hmac
+	printf '\x00\x00' > unique.dat
+	tpm2_createprimary -C o -G ecc  -g sha256  -c primary.ctx -a "fixedtpm|fixedparent|sensitivedataorigin|userwithauth|noda|restricted|decrypt" -u unique.dat
+
+	tpm2_create -G hmac:sha256  -g sha256  -u key.pub -r key.priv -C primary.ctx
+	tpm2_flushcontext -t && tpm2_flushcontext -s && tpm2_flushcontext -l
+
+	tpm2_load -C primary.ctx -u key.pub -r key.priv -c key.ctx
+	tpm2_flushcontext -t && tpm2_flushcontext -s && tpm2_flushcontext -l	
+	tpm2_encodeobject -C primary.ctx -u key.pub -r  key.priv -o private.pem
+	tpm2_evictcontrol -C o -c key.ctx 0x81008006
 ```
 
 If you would rather generate a TPM based PEM file that is compatible with openssl
@@ -241,8 +255,6 @@ $ go run nopolicy/main.go --mode=rsa --persistentHandle=0x81008001 --tpm-path=/d
 	2024/05/30 11:26:54      verified with TPM PublicKey
 	2024/05/30 11:26:54      verified with exported PubicKey
 
-
-
 ## PS256
 $ go run nopolicy/main.go --mode=rsapss --persistentHandle=0x81008004 --tpm-path=/dev/tpmrm0
 
@@ -277,7 +289,14 @@ $ go run nopolicy/main.go --mode=ecc --persistentHandle=0x81008005 --tpm-path=/d
 	2024/05/30 11:27:35      verified with TPM PublicKey
 	2024/05/30 11:27:35      verified with exported PubicKey
 
+## HMAC256
+$ go run nopolicy/main.go --mode=hmac --persistentHandle=0x81008006 --tpm-path=/dev/tpmrm0
 
+	2026/05/25 13:25:06 ======= Init  ========
+	2026/05/25 13:25:06 primaryKey Name AAvhAC11AkPQphWdXOry5WDCcR2pM0lL8FyxW7vnUaVhpQ==
+	TOKEN: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJ0ZXN0IiwiZXhwIjoxNzc5NzI5OTY2fQ.3lp0iVzS0A7dy0fLi73sJOPrsiMTXcEenApIw-iXX6M
+	2026/05/25 13:25:06      verified with TPM PublicKey
+`
 ### usign PEM Keyfile
 
 $ go run go_keyfile_compat/main.go --in private.pem
@@ -323,9 +342,7 @@ If the TPM key you are using to sign is transferred from another system, using e
 
 you can initialize the parent for the EK and then custom policy handlers.  For example, see [example/go_keyfile_ekparent/](example/go_keyfile_ekparent/) folder which uses a reference to the  `tpmcopy` sample set to use a duplicated key with passphrase.  
 
-
 You can also see how to load the entire chain here [Loading TPM key chains](https://github.com/salrashid123/tpm2/context_chain)
-
 
 ### With Session and Policy
 
@@ -482,6 +499,49 @@ which you can call as:
 		TPMDevice: rwc,
 		Handle: tpm2.TPMHandle(*persistentHandle),
 		AuthSession: p,
+	}
+```
+### Verify
+
+RSA, ECC keys can be verified with just the public key:
+
+```golang
+	pubBytes, err := x509.MarshalPKIXPublicKey(pubKey)
+
+	pubKey := pem.EncodeToMemory(
+		&pem.Block{
+			Type:  "PUBLIC KEY",
+			Bytes: pubBytes,
+		},
+	)
+
+	v, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
+		return pubKey, nil
+	})
+	if err != nil {
+		log.Fatalf("Error parsing token %v", err)
+	}
+	if v.Valid {
+		log.Println("     verified with exported PubicKey")
+	}
+```
+
+For HMAC keys, you need to initialize the TPM based key and use a keyfunc
+
+```golang
+	config := &tpmjwt.TPMConfig{
+		TPMDevice: rwc,
+		Handle:    tpm2.TPMHandle(*persistentHandle),
+	}
+
+	keyctx, err := tpmjwt.NewTPMContext(ctx, config)
+
+	keyFunc, err := tpmjwt.TPMVerfiyKeyfunc(keyctx, config)
+
+	vtoken, err := jwt.Parse(tokenString, keyFunc)
+
+	if vtoken.Valid {
+		log.Println("     verified with TPM key")
 	}
 ```
 
